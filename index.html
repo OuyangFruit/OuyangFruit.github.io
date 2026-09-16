@@ -4,11 +4,13 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="theme-color" content="#8e173c">
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Ccircle cx='32' cy='32' r='29' fill='%23ad173b' stroke='%23f5ce65' stroke-width='5'/%3E%3Ctext x='32' y='43' text-anchor='middle' fill='%23ffe49b' font-size='32' font-family='sans-serif' font-weight='bold'%3E77%3C/text%3E%3C/svg%3E">
   <title>OuyangFruit · 经典水果机</title>
   <link rel="stylesheet" href="./css/game.css">
   <link rel="stylesheet" href="./css/lights.css">
   <link rel="stylesheet" href="./css/animations.css">
   <link rel="stylesheet" href="./css/texture.css">
+  <link rel="stylesheet" href="./css/gameplay.css">
 </head>
 <body>
   <main class="machine" aria-label="经典实体水果机">
@@ -21,6 +23,10 @@
     <section class="playfield" aria-label="外围奖项跑灯盘与中央功能盘">
       <div class="board-photo" aria-hidden="true"></div>
       <div class="center-feature-photo" aria-hidden="true"></div>
+      <div class="special-spots" aria-hidden="true">
+        <i data-event="SMALL_THREE"></i><i data-event="BIG_THREE"></i><i data-event="BIG_FOUR"></i>
+        <i data-event="DOUBLE_CANNON"></i><i data-event="TRAIN"></i><i data-event="GRAND_SLAM"></i>
+      </div>
       <div class="board" id="board"></div>
       <div class="feature-led led-digits" id="feature-value" aria-label="中央功能盘数值">32</div>
       <div class="center-result" id="result" aria-live="polite"></div>
@@ -31,7 +37,8 @@
     </section>
     <section class="control-deck" aria-label="实体按键控制区">
       <div class="function-row">
-        <button id="clear" class="function-key" type="button">退分 <small>CLEAR</small></button>
+        <button id="clear" class="function-key" type="button">清除 <small>CLEAR</small></button>
+        <button id="rebet" class="function-key" type="button">续压 <small>REBET</small></button>
         <button id="sound" class="function-key sound-key" type="button" aria-pressed="true">声音 <small>ON</small></button>
         <div class="status" id="status" role="status" aria-live="polite">准备就绪 · 按红色按钮下注</div>
         <button id="start" class="start-key" type="button">START <small>启动</small></button>
@@ -43,7 +50,7 @@
         <button type="button" disabled>大</button><button type="button" disabled>小</button>
       </div>
       <div class="bet-keys" id="bet-keys"></div>
-      <div class="deck-footer"><span>纯娱乐虚拟积分</span><span>按 D 打开演示模式</span></div>
+      <div class="deck-footer"><span>纯娱乐虚拟积分</span><span>严禁赌博　仅供娱乐</span></div>
     </section>
   </main>
   <aside id="debug" class="debug-panel" hidden><strong>DEMO MODE</strong><label for="forced">指定结果</label><select id="forced"><option value="">随机</option><option value="APPLE">APPLE WIN</option><option value="BELL">BELL WIN</option><option value="SEVEN">蓝九 WIN</option><option value="BAR">BAR JACKPOT</option><option value="LOSE">LOSE</option></select><button id="reset" type="button">重置积分</button></aside>

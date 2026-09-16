@@ -1,31 +1,21 @@
-# OuyangFruit 经典水果机（视觉重构待审核）
+# OuyangFruit 经典水果盘
 
-纯前端、虚拟积分、无账户或支付。本地视觉版依据 `reference/original-fruit-machine.jpg` 与原机参考包制作；GitHub Pages 当前暂停发布，本分支尚未推送。
-
-## 本地运行
-
-在本目录启动任意静态 HTTP 服务器，例如 `npx serve .`，打开其本地地址。直接双击 `index.html` 可能受浏览器 ES Module 与 `file://` 音频加载限制。
+纯前端个人怀旧游戏，仅使用虚拟 CREDIT，无充值、提现或兑换。GitHub Organization Pages 从 `main` 的仓库根目录发布到 <https://ouyangfruit.github.io/>。
 
 ## 操作
 
-- 8 个红色按钮分别对应 BAR、蓝九、星星、西瓜、铃铛、紫李、橘子、苹果。每按一次，对应 LED 加 1，CREDIT 扣 1。
-- 按 **START** 开始跑灯。灯停在已押的奖项时，按该路下注额与 `js/prize-table.js` 的倍率计算 WIN；没有押中的奖项不计赢分。
-- **CLEAR** 退回尚未开始的下注。声音按钮切换 ON/OFF。
-- 按 **D** 或添加 `?debug=1` 打开演示面板；可强制苹果、铃铛、蓝九、BAR 或未中奖。
+- 八路红色按钮单击加 1；长按后每周期加 10，单路最高 99。下注时不扣 CREDIT，按 START 时只扣一次。
+- 开奖后保留八路下注，可直接再次 START；CLEAR 清空当前下注，REBET 恢复上一局完整下注。
+- 声音按钮切换 ON/OFF，偏好保存在浏览器本地。游戏声音由 Web Audio 实时合成，不依赖 MP3 才能运行。
+- `?debug=1` 显示测试面板，可指定普通结果或直接触发小三元、大三元、大四喜、双响炮、开火车、大满贯，并提供测试 CREDIT 与下注预设。`?debug=1&test=1` 仅供自动化验收使用，会缩短动画等待。
 
-## 视觉参考与截图
+## 代码
 
-- `reference/original-fruit-machine.jpg`：用户提供的完整原机截图。
-- `reference/annotated-machine-structure.jpg`：结构标注图。
-- `current-version.png`：本地网页整页截图。
-- `visual-comparison.png` 与 `visual-comparison.html`：原图与新版对照。
-- `assets/images/machine-core.jpg`、`assets/images/center-feature-board.jpg`、`assets/images/eight-bet-displays.jpg`：参考包中的原机局部画面，作为奖项盘、放大的中央功能盘与下注窗底图。
-- `assets/images/symbols/`：从原机局部照片裁出的九类印刷奖项符号，用于外围 24 格；原始参考包未修改。
+- `js/game-engine.js`：状态机、虚拟积分、下注、续压、结算与滚分。
+- `js/board-model.js`、`js/bet-types.js`：24 格数据与八路下注映射。原机照片中紫李的旧版 `GRAPE` 资源及倍率保留，新的下注状态将其映射到 `papaya`。
+- `js/light-runner.js`、`js/lighting-effects.js`：逐格跑灯、减速、拖尾和爆灯。
+- `js/special-event-engine.js`、`js/config/special-events.js`：六种特殊节目与可调整概率。
+- `js/audio/`：单个 AudioContext、程序化音效、压缩器与可选样本层。旧 MP3 素材保留，但当前玩法不依赖它们。
+- `reference/`、`assets/images/`：用户提供的原机参考及裁取素材，机台画面继续沿用。
 
-外围为 7×7 边框的 24 格顺时针跑灯，中央功能盘放大并保留原机视觉与数字显示。WIN/CREDIT 和八路下注窗口为七段 LED，下注按钮为红色机械按钮造型。底部上分、下分、左移、右移、单、双、大、小只预留视觉位置，尚未接入功能。LED、独立下注、跑灯、音频与中奖动画仍使用现有引擎。
-
-## 配置
-
-- `js/game-config.js`：积分、单次下注、跑灯阶段速度、圈数和拖尾。
-- `js/prize-table.js`：外围格子顺序、8 路下注与概率倍率。`SEVEN` / `GRAPE` 保留内部键名，画面分别使用原机蓝九 / 紫李图案。
-- `assets/audio/audio-map.json`：音频文件映射。当前真实音效仍是候选切片，灯步 tick 与按键短音由 Web Audio 产生；音效精修留待审核后的下一阶段。
+本地测试需使用 HTTP 静态服务器；`file://` 可能阻止 ES Modules 加载。
