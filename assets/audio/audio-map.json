@@ -1,0 +1,12 @@
+{
+  "button": null,
+  "start": "./assets/audio/04_transition_quiet_to_action.mp3",
+  "running": null,
+  "tick": null,
+  "slowdown": null,
+  "stop": "./assets/audio/09_pause_transition.mp3",
+  "small_win": "./assets/audio/05_event_C.mp3",
+  "big_win": "./assets/audio/03_event_B_high_energy.mp3",
+  "jackpot": "./assets/audio/11_event_H_final.mp3",
+  "background": "./assets/audio/01_intro_machine.mp3"
+}

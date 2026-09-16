@@ -1,0 +1,34 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#171311">
+  <title>经典水果机 · 街机演示</title>
+  <link rel="stylesheet" href="./css/game.css">
+  <link rel="stylesheet" href="./css/lights.css">
+  <link rel="stylesheet" href="./css/animations.css">
+</head>
+<body>
+  <main class="cabinet" aria-label="经典水果机游戏">
+    <header class="marquee"><span class="marquee-star">★</span><div><small>CLASSIC ARCADE</small><h1>水果乐园</h1><span class="subtitle">FRUIT PARADISE</span></div><span class="marquee-star">★</span></header>
+    <section class="scoreboard" aria-label="游戏信息">
+      <div class="display"><label>CREDIT 积分</label><strong id="credit">1000</strong></div>
+      <div class="display"><label>WIN 赢分</label><strong id="win">0</strong></div>
+      <div class="display"><label>BET 下注</label><strong id="bet-display">10</strong></div>
+    </section>
+    <div class="status-row"><span class="status-led"></span><span id="status" role="status" aria-live="polite">准备就绪 · 请选择下注</span><button id="sound" class="sound-button" type="button" aria-pressed="true">♪ 声音 开</button></div>
+    <section class="playfield" aria-label="水果跑灯盘">
+      <div class="board" id="board"></div>
+      <div class="center-panel"><div class="center-inner"><div class="seven">77</div><div class="center-title">好运连连</div><div class="center-fruits">🍉 🍇 🍎</div><div class="center-rule">灯停哪里 · 赢在哪里</div><div class="center-result" id="result">PRESS START</div></div></div>
+    </section>
+    <section class="controls" aria-label="游戏控制">
+      <div class="bet-group"><span class="control-label">选择分数</span><div class="bet-buttons" id="bet-buttons"></div></div>
+      <div class="action-buttons"><button id="clear" class="arcade-button clear" type="button">CLEAR<span>清空赢分</span></button><button id="start" class="arcade-button start" type="button">START<span>开始游戏</span></button></div>
+    </section>
+    <footer class="cabinet-foot"><span>★ 纯娱乐虚拟积分 ★</span><span>按 D 打开演示模式</span></footer>
+  </main>
+  <aside id="debug" class="debug-panel" hidden><strong>DEMO MODE</strong><label for="forced">指定结果</label><select id="forced"><option value="">随机</option><option value="APPLE">APPLE WIN</option><option value="BELL">BELL WIN</option><option value="SEVEN">77 WIN</option><option value="BAR">BAR JACKPOT</option><option value="LOSE">LOSE</option></select><button id="reset" type="button">重置积分</button></aside>
+  <script type="module" src="./js/game.js"></script>
+</body>
+</html>
