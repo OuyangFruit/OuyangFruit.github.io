@@ -1,28 +1,35 @@
-export const PRIZES = Object.freeze({
-  LOSE:   { label: '再来一次', multiplier: 0, weight: 50, tier: 'none' },
-  APPLE:  { label: '苹果', multiplier: 2, weight: 20, tier: 'small' },
-  LEMON:  { label: '柠檬', multiplier: 3, weight: 10, tier: 'small' },
-  ORANGE: { label: '橙子', multiplier: 5, weight: 7, tier: 'small' },
-  WATERMELON: { label: '西瓜', multiplier: 6, weight: 5, tier: 'small' },
-  GRAPE:  { label: '葡萄', multiplier: 8, weight: 5, tier: 'small' },
-  BELL:   { label: '铃铛', multiplier: 10, weight: 4, tier: 'big' },
-  STAR:   { label: '星星', multiplier: 15, weight: 2, tier: 'big' },
-  SEVEN:  { label: '77', multiplier: 25, weight: 1.5, tier: 'big' },
-  BAR:    { label: 'BAR', multiplier: 50, weight: 0.5, tier: 'jackpot' }
-});
-
+// Clockwise from the top-left cell of the 7 × 7 perimeter in the reference photo.
+// SEVEN and GRAPE retain their original internal keys for Demo Mode compatibility;
+// their printed machine artwork is the blue-nine and purple-plum symbol.
 export const BOARD = [
-  'APPLE','LEMON','ORANGE','GRAPE','BELL','STAR','SEVEN','BAR',
-  'WATERMELON','APPLE','LEMON','ORANGE','GRAPE','BELL',
-  'STAR','SEVEN','BAR','LOSE','APPLE','LEMON','ORANGE','GRAPE','LOSE','WATERMELON'
+  'ORANGE','BELL','BAR','BAR','BAR','APPLE','GRAPE',
+  'WATERMELON','WATERMELON','LOSE','APPLE','ORANGE',
+  'ORANGE','BELL','SEVEN','SEVEN','APPLE','GRAPE','GRAPE',
+  'STAR','STAR','LOSE','APPLE','BELL'
 ];
 
-export const SYMBOLS = {
-  APPLE: ['🍎','APPLE'], LEMON: ['🍋','LEMON'], ORANGE: ['🍊','ORANGE'],
-  GRAPE: ['🍇','GRAPE'], BELL: ['🔔','BELL'], STAR: ['⭐','STAR'],
-  SEVEN: ['77','DOUBLE'], BAR: ['BAR','BAR'], WATERMELON: ['🍉','MELON'],
-  LOSE: ['◇','LUCK']
-};
+export const BET_CHANNELS = [
+  { key: 'BAR', label: 'BAR' },
+  { key: 'SEVEN', label: '蓝九' },
+  { key: 'STAR', label: '星星' },
+  { key: 'WATERMELON', label: '西瓜' },
+  { key: 'BELL', label: '铃铛' },
+  { key: 'GRAPE', label: '紫李' },
+  { key: 'ORANGE', label: '橘子' },
+  { key: 'APPLE', label: '苹果' }
+];
+
+export const PRIZES = Object.freeze({
+  LOSE: { label: '未中奖', multiplier: 0, weight: 48, tier: 'none' },
+  APPLE: { label: '苹果', multiplier: 2, weight: 17, tier: 'small' },
+  ORANGE: { label: '橘子', multiplier: 3, weight: 11, tier: 'small' },
+  GRAPE: { label: '紫李', multiplier: 5, weight: 8, tier: 'small' },
+  WATERMELON: { label: '西瓜', multiplier: 6, weight: 6, tier: 'small' },
+  BELL: { label: '铃铛', multiplier: 10, weight: 5, tier: 'big' },
+  STAR: { label: '星星', multiplier: 15, weight: 3, tier: 'big' },
+  SEVEN: { label: '蓝九', multiplier: 25, weight: 1.5, tier: 'big' },
+  BAR: { label: 'BAR', multiplier: 50, weight: 0.5, tier: 'jackpot' }
+});
 
 export function drawPrize(forced = '') {
   if (forced && PRIZES[forced]) return forced;

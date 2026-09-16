@@ -1,0 +1,19 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>原机与视觉重构对照</title>
+  <style>
+    *{box-sizing:border-box}body{margin:0;min-height:100vh;padding:20px;background:#21131b;color:#ffe1a1;font:15px Arial,"Microsoft YaHei",sans-serif}h1{text-align:center;font-size:22px;margin:0 0 18px}.comparison{display:flex;justify-content:center;align-items:flex-start;gap:24px}.panel{margin:0;text-align:center}.panel img,.crop{height:min(80vh,640px);border:3px solid #dfb461;box-shadow:0 7px 20px #0008}.reference{width:auto}.crop{width:min(48vw,380px);overflow:hidden}.crop img{width:100%;height:100%;object-fit:cover;object-position:center;border:0;box-shadow:none}.panel figcaption{margin-top:10px;font-weight:bold}.note{text-align:center;color:#c8aa87;font-size:12px;margin-top:18px}@media(max-width:690px){.comparison{gap:8px}.panel img,.crop{height:65vh}.crop{width:48vw}h1{font-size:17px}}
+  </style>
+</head>
+<body>
+  <h1>原机参考 / 本地视觉重构</h1>
+  <div class="comparison">
+    <figure class="panel"><img class="reference" src="./reference/original-fruit-machine.jpg" alt="用户提供的原机参考截图"><figcaption>01 原机参考截图</figcaption></figure>
+    <figure class="panel"><div class="crop"><img src="./current-version.png" alt="重构后的网页版机器截图"></div><figcaption>新版网页整页截图（中间机器区域）</figcaption></figure>
+  </div>
+  <p class="note">原始照片包含短视频界面遮挡；右侧整页截图只在本对照页中裁去浏览器留白，源文件未裁改。</p>
+</body>
+</html>
