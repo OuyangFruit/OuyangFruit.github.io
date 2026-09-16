@@ -19,9 +19,10 @@
 - `reference/annotated-machine-structure.jpg`：结构标注图。
 - `current-version.png`：本地网页整页截图。
 - `visual-comparison.png` 与 `visual-comparison.html`：原图与新版对照。
-- `assets/images/machine-core.jpg`、`assets/images/eight-bet-displays.jpg`：参考包中的清晰原机局部画面，作为网页奖项盘与下注窗的视觉底图。原始包未修改。
+- `assets/images/machine-core.jpg`、`assets/images/center-feature-board.jpg`、`assets/images/eight-bet-displays.jpg`：参考包中的原机局部画面，作为奖项盘、放大的中央功能盘与下注窗底图。
+- `assets/images/symbols/`：从原机局部照片裁出的九类印刷奖项符号，用于外围 24 格；原始参考包未修改。
 
-外围为 7×7 边框的 24 格顺时针跑灯，中央功能盘目前保留原机视觉与数字显示；高级功能没有接入新玩法。LED、独立下注、跑灯、音频与中奖动画仍使用现有引擎。
+外围为 7×7 边框的 24 格顺时针跑灯，中央功能盘放大并保留原机视觉与数字显示。WIN/CREDIT 和八路下注窗口为七段 LED，下注按钮为红色机械按钮造型。底部上分、下分、左移、右移、单、双、大、小只预留视觉位置，尚未接入功能。LED、独立下注、跑灯、音频与中奖动画仍使用现有引擎。
 
 ## 配置
 

@@ -8,6 +8,7 @@
   <link rel="stylesheet" href="./css/game.css">
   <link rel="stylesheet" href="./css/lights.css">
   <link rel="stylesheet" href="./css/animations.css">
+  <link rel="stylesheet" href="./css/texture.css">
 </head>
 <body>
   <main class="machine" aria-label="经典实体水果机">
@@ -19,6 +20,7 @@
     </section>
     <section class="playfield" aria-label="外围奖项跑灯盘与中央功能盘">
       <div class="board-photo" aria-hidden="true"></div>
+      <div class="center-feature-photo" aria-hidden="true"></div>
       <div class="board" id="board"></div>
       <div class="feature-led led-digits" id="feature-value" aria-label="中央功能盘数值">32</div>
       <div class="center-result" id="result" aria-live="polite"></div>
@@ -33,6 +35,12 @@
         <button id="sound" class="function-key sound-key" type="button" aria-pressed="true">声音 <small>ON</small></button>
         <div class="status" id="status" role="status" aria-live="polite">准备就绪 · 按红色按钮下注</div>
         <button id="start" class="start-key" type="button">START <small>启动</small></button>
+      </div>
+      <div class="function-bank" aria-label="预留功能控制区">
+        <button type="button" disabled>上分</button><button type="button" disabled>下分</button>
+        <button type="button" disabled>左移</button><button type="button" disabled>右移</button>
+        <button type="button" disabled>单</button><button type="button" disabled>双</button>
+        <button type="button" disabled>大</button><button type="button" disabled>小</button>
       </div>
       <div class="bet-keys" id="bet-keys"></div>
       <div class="deck-footer"><span>纯娱乐虚拟积分</span><span>按 D 打开演示模式</span></div>

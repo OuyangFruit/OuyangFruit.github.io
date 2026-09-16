@@ -4,6 +4,7 @@ import { LightEngine } from './light-engine.js';
 import { AudioManager } from './audio-manager.js';
 import { WinAnimationEngine } from './win-animation.js';
 import { setupDebug } from './debug.js';
+import { renderSevenSegment } from './led-display.js';
 
 const $ = id => document.getElementById(id);
 const machine = document.querySelector('.machine');
@@ -15,6 +16,12 @@ let credit = config.INITIAL_CREDIT, win = 0, busy = false;
 const stakes = Object.fromEntries(BET_CHANNELS.map(channel => [channel.key, 0]));
 const totalStake = () => Object.values(stakes).reduce((sum, stake) => sum + stake, 0);
 const displayNumber = value => String(value).padStart(2, '0');
+const PRINT_LABELS = [
+  '10–20','10–20','×60','×120','×30','5–6','10–20',
+  '20–40','×3','','5–6','×3',
+  '10–20','10–20','×3','20–40','5–6','×3','10–20',
+  '20–40','×3','','5–6','×3'
+];
 
 // 24 original-machine cells: top 7, right 5, bottom 7, left 5.
 const coordinates = [];
@@ -27,6 +34,8 @@ BOARD.forEach((key, i) => {
   tile.className = 'tile';
   tile.style.gridColumn = coordinates[i][0];
   tile.style.gridRow = coordinates[i][1];
+  tile.style.setProperty('--symbol-url', `url('../assets/images/symbols/${key.toLowerCase()}.png')`);
+  tile.innerHTML = `<span class="tile-art" aria-hidden="true"></span><span class="tile-print">${PRINT_LABELS[i]}</span>`;
   tile.setAttribute('aria-label', `${i + 1} ${PRIZES[key].label}`);
   board.append(tile);
 });
@@ -56,15 +65,15 @@ BET_CHANNELS.forEach(channel => {
 });
 
 function render() {
-  creditEl.textContent = String(credit).padStart(4, '0');
-  winEl.textContent = String(win).padStart(4, '0');
+  renderSevenSegment(creditEl, credit, 4);
+  renderSevenSegment(winEl, win, 4);
   startButton.disabled = busy || totalStake() === 0;
   clearButton.disabled = busy || totalStake() === 0;
   BET_CHANNELS.forEach(channel => {
     const stake = stakes[channel.key];
     const lane = betStrip.querySelector(`[data-channel="${channel.key}"]`);
     const button = betKeys.querySelector(`[data-channel="${channel.key}"]`);
-    lane.querySelector('.bet-led').textContent = displayNumber(stake);
+    renderSevenSegment(lane.querySelector('.bet-led'), displayNumber(stake), 2);
     lane.classList.toggle('active', stake > 0);
     button.classList.toggle('active', stake > 0);
     button.disabled = busy || credit < config.BET_STEP || stake >= config.MAX_BET_PER_CHANNEL;
