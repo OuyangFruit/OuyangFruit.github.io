@@ -1,0 +1,27 @@
+/* Original printed symbols beneath illuminated red acrylic button caps. */
+.bet-key .button-cap {
+  isolation:isolate; display:grid; place-items:center; overflow:hidden;
+  width:min(119%,84px); max-width:84px;
+  background:radial-gradient(circle at 46% 38%,#ffdb7c90 0,#f46b5899 42%,#bd163cdd 78%,#760c2b 100%);
+  border-color:#dc6971; border-bottom-color:#650c2a;
+  box-shadow:inset 0 2px 6px #fff2bd9c,inset -5px -9px 12px #690b28,0 5px 2px #531026,0 0 0 2px #eabf79;
+  transition:transform .09s ease,box-shadow .09s ease,border-bottom-width .09s ease;
+}
+.bet-key .button-symbol {
+  display:block; width:74%; height:74%; position:relative; z-index:1;
+  background-image:var(--button-symbol); background-position:center;
+  background-size:contain; background-repeat:no-repeat;
+  filter:drop-shadow(1px 2px 1px #5b0c28) saturate(1.23) contrast(1.12);
+}
+.bet-key .button-cap::before {z-index:2;left:19%;top:9%;width:44%;height:15%;background:#fff5dfc2;filter:blur(3px)}
+.bet-key .button-cap::after {z-index:2;inset:6%;border:2px solid #ffe6b574;box-shadow:inset 0 0 6px #ffeabb66}
+.bet-key.active .button-cap,.bet-key.special-complete .button-cap {
+  background:radial-gradient(circle at 50% 40%,#fff1b4 0,#ffb971a8 36%,#df3251d9 77%,#800d2e);
+  box-shadow:inset 0 2px 8px #fff9d4,inset -4px -8px 9px #7b1131,0 5px 2px #531026,0 0 13px 4px #ffd074;
+}
+.bet-key:active .button-cap {transform:translateY(5px) scale(.96);border-bottom-width:3px;box-shadow:inset 0 5px 12px #650e2f,0 1px 1px #531026,0 0 5px #f5c56d}
+.bet-key.winner .button-cap {animation:fruit-button-win .17s 3 alternate}
+.bet-key-label {font-size:clamp(7px,.86vw,9px);color:#ffe5a9}
+.machine.start-pulse .start-key {filter:brightness(1.65);box-shadow:0 0 19px 7px #ffd26d,inset 0 2px 7px #fff5cc}
+@keyframes fruit-button-win {to {filter:brightness(1.8);box-shadow:inset 0 0 14px #fff,0 0 22px 9px #ffdd7b}}
+@media(max-width:600px){.bet-key .button-cap{width:119%;border-width:2px;border-bottom-width:5px}.bet-key .button-symbol{width:78%;height:78%}.bet-key-label{font-size:6px}}
