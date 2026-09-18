@@ -15,7 +15,7 @@
 - `js/board-model.js`、`js/bet-types.js`：24 格数据与八路下注映射。原机照片中紫李的旧版 `GRAPE` 资源及倍率保留，新的下注状态将其映射到 `papaya`。
 - `js/light-runner.js`、`js/lighting-effects.js`：逐格跑灯、减速、拖尾和爆灯。
 - `js/special-event-engine.js`、`js/config/special-events.js`：六种特殊节目与可调整概率。
-- `js/audio/`：单个 AudioContext、程序化音效、压缩器与可选样本层。旧 MP3 素材保留，但当前玩法不依赖它们。
+- `js/audio/`：单个 AudioContext、程序化音效、压缩器与 AudioBuffer 样本层。`assets/audio/native/` 内的原机录像音轨用于启动、水果奖、大奖和特殊事件；样本未就绪时自动回退到合成音，不会阻塞游戏。
 - `reference/`、`assets/images/`：用户提供的原机参考及裁取素材，机台画面继续沿用。
 
 本地测试需使用 HTTP 静态服务器；`file://` 可能阻止 ES Modules 加载。
