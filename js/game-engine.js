@@ -39,6 +39,7 @@ export class GameEngine {
     const next = Math.min(99, before + amount);
     if (next === before) { this.audio.limit(); return false; }
     this.currentBets[betType] = next;
+    this.audio.button(amount > 1);
     this.state('BETTING', `${PRIZES[symbol].label} 下注 ${next} 分`);
     if (next === 99) this.audio.limit();
     return true;
@@ -52,6 +53,7 @@ export class GameEngine {
   rebet() {
     if (!this.canEdit() || !Object.values(this.lastBets).some(Boolean)) return false;
     this.currentBets = { ...this.lastBets };
+    this.audio.button(true);
     this.state('BETTING', '已恢复上一局下注 · 可直接开始');
     return true;
   }
@@ -61,7 +63,7 @@ export class GameEngine {
     this.state('BETTING', `测试下注：每路 ${value} 分`);
     return true;
   }
-  addCredit(value) { if (this.canEdit()) { this.credit += value; this.emit(); } }
+  addCredit(value) { if (this.canEdit()) { this.credit += value; this.audio.credit(); this.emit(); } }
   reset() {
     if (!this.canEdit()) return;
     this.credit = 1000; this.win = 0;
@@ -110,6 +112,8 @@ export class GameEngine {
     this.forcedPrize = ''; this.forcedSpecial = '';
     try {
       await this.audio.unlock();
+      await this.effects.timeline.cue(90, () => this.effects.cabinet.classList.add('start-pulse'), () => this.audio.startKick());
+      await this.effects.timeline.cue(160, () => this.effects.cabinet.classList.remove('start-pulse'), () => this.audio.chime(0));
       const specialType = forcedSpecial || (!forcedPrize && drawSpecial());
       if (specialType) {
         this.state('SPECIAL_TRIGGER', `${specialType} 触发`);
@@ -125,13 +129,14 @@ export class GameEngine {
         const cell = await this.runner.spinTo(target);
         await this.effects.wait(180);
         if (this.roundBets[cell.betType] > 0 && cell.multiplier > 0) {
-          this.audio.hit(PRIZES[cell.symbol].tier === 'jackpot' ? 3 : 1);
-          await this.effects.flashCell(target, PRIZES[cell.symbol].tier === 'jackpot' ? 4 : 2,
-            PRIZES[cell.symbol].tier === 'jackpot' ? 3 : 1);
+          const prizePower = PRIZES[cell.symbol].tier === 'jackpot' ? 3 : PRIZES[cell.symbol].tier === 'big' ? 2 : 1;
+          this.effects.betWindowFlash(cell.symbol);
+          await this.effects.flashCell(target, prizePower === 3 ? 4 : prizePower === 2 ? 3 : 2, prizePower);
           if (PRIZES[cell.symbol].tier === 'jackpot') await this.effects.jackpotCelebration();
           this.effects.tiles[target].classList.add('final');
+          this.audio.prize(cell.symbol, PRIZES[cell.symbol].tier);
         }
-        await this.settle(cell);
+        await this.settle(cell, { countDuration: PRIZES[cell.symbol].tier === 'big' ? 850 : 500 });
         this.status = this.win ? `${PRIZES[symbol].label}中奖 · 赢得 ${this.win} 分` : `${PRIZES[symbol].label} · 未中奖`;
       }
       this.state('READY_NEXT', this.status);

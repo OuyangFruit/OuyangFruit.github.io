@@ -1,4 +1,4 @@
-const pause = ms => new Promise(resolve => setTimeout(resolve, ms));
+import { EventTimeline } from './event-timeline.js';
 
 export class LightingEffects {
   constructor(tiles, cabinet, runner, audio, scale = 1) {
@@ -7,9 +7,10 @@ export class LightingEffects {
     this.runner = runner;
     this.audio = audio;
     this.scale = scale;
+    this.timeline = new EventTimeline(scale);
     this.featureValue = document.getElementById('feature-value');
   }
-  wait(ms) { return pause(Math.max(1, ms * this.scale)); }
+  wait(ms) { return this.timeline.wait(ms); }
   show(indices) {
     const lit = new Set(indices);
     this.tiles.forEach((tile, i) => {
@@ -30,19 +31,21 @@ export class LightingEffects {
     const lane = document.querySelector(`.bet-lane[data-channel="${symbol}"]`);
     if (!lane) return;
     lane.classList.add('special-hit');
-    setTimeout(() => lane.classList.remove('special-hit'), Math.max(80, 450 * this.scale));
+    const button = document.querySelector(`.bet-key[data-channel="${symbol}"]`);
+    button?.classList.add('winner');
+    setTimeout(() => { lane.classList.remove('special-hit'); button?.classList.remove('winner'); }, Math.max(80, 450 * this.scale));
   }
   holdBetWindow(symbol) {
     document.querySelector(`.bet-lane[data-channel="${symbol}"]`)?.classList.add('special-complete');
+    document.querySelector(`.bet-key[data-channel="${symbol}"]`)?.classList.add('special-complete');
   }
-  clearBetWindows() { document.querySelectorAll('.bet-lane').forEach(lane => lane.classList.remove('special-hit', 'special-complete')); }
+  clearBetWindows() { document.querySelectorAll('.bet-lane,.bet-key').forEach(item => item.classList.remove('special-hit', 'special-complete', 'winner')); }
   vibrate(pattern) { if (typeof navigator.vibrate === 'function') navigator.vibrate(pattern); }
   async flashCell(index, count = 2, power = 1) {
     for (let i = 0; i < count; i++) {
-      this.show([index]); this.audio.hit(power); this.vibrate(power > 1 ? [30,30,50] : 20);
+      await this.timeline.cue(i ? 85 : 1, () => { this.show([index]); this.betWindowFlash(this.runner.cells[index].symbol); this.vibrate(power > 1 ? [30,30,50] : 20); }, () => this.audio.hit(power));
       await this.wait(115);
       this.show([]);
-      await this.wait(85);
     }
     this.show([index]);
   }
@@ -51,11 +54,11 @@ export class LightingEffects {
     for (let i = 0; i < count; i++) { this.show(indices); await this.wait(160); this.show([]); await this.wait(85); }
     this.show(indices);
   }
-  async chaseClockwise(rounds = 1, speed = 45) { for (let i = 0; i < rounds * this.tiles.length; i++) { this.runner.show(this.runner.index + 1); this.audio.tick('SPINNING', speed); await this.wait(speed); } }
-  async chaseCounterClockwise(rounds = 1) { for (let i = 0; i < rounds * this.tiles.length; i++) { this.runner.show(this.runner.index - 1); this.audio.tick('SPINNING', 50); await this.wait(45); } }
+  async chaseClockwise(rounds = 1, speed = 45) { for (let i = 0; i < rounds * this.tiles.length; i++) await this.timeline.cue(speed, () => this.runner.show(this.runner.index + 1), () => this.audio.tick('SPINNING', speed)); }
+  async chaseCounterClockwise(rounds = 1) { for (let i = 0; i < rounds * this.tiles.length; i++) await this.timeline.cue(45, () => this.runner.show(this.runner.index - 1), () => this.audio.tick('SPINNING', 50)); }
   async allFlash(times = 3) {
     const all = this.tiles.map((_, index) => index);
-    for (let i = 0; i < times; i++) { this.show(all); await this.wait(140); this.show([]); await this.wait(95); }
+    for (let i = 0; i < times; i++) { await this.timeline.cue(i ? 95 : 1, () => this.show(all), () => this.audio.boom(1)); await this.wait(140); this.show([]); }
     this.show(all);
   }
   async jackpotCelebration() { this.audio.boom(3); await this.allFlash(3); await this.chaseClockwise(1); }

@@ -1,4 +1,4 @@
-const wait = ms => new Promise(resolve => setTimeout(resolve, ms));
+import { EventTimeline } from './event-timeline.js';
 
 export class LightRunner {
   constructor(cells, tiles, audio, onPhase = () => {}, scale = 1) {
@@ -7,6 +7,7 @@ export class LightRunner {
     this.audio = audio;
     this.onPhase = onPhase;
     this.scale = scale;
+    this.timeline = new EventTimeline(scale);
     this.index = 0;
     this.phase = 'IDLE';
     this.active = false;
@@ -49,9 +50,8 @@ export class LightRunner {
           this.setPhase('SPINNING');
           speed = special ? 30 : 42 + Math.random() * 18;
         }
-        await wait(Math.max(1, speed * this.scale * tempo * (.9 + Math.random() * .2)));
-        this.show(this.index + 1);
-        this.audio.tick(this.phase, speed);
+        await this.timeline.cue(speed * tempo * (.9 + Math.random() * .2),
+          () => this.show(this.index + 1), () => this.audio.tick(this.phase, speed, left));
       }
       this.show(target, false);
       this.setPhase('NORMAL_STOP');
@@ -64,10 +64,8 @@ export class LightRunner {
     this.setPhase('SPECIAL_RUNNING');
     for (let step = 0; step < count; step++) {
       const speed = Math.max(54, 145 - step * 8);
-      await wait(Math.max(1, speed * this.scale));
       const index = (start + direction * step + this.cells.length * 10) % this.cells.length;
-      this.show(index, true, true, direction);
-      this.audio.trainStep(step, speed);
+      await this.timeline.cue(speed, () => this.show(index, true, true, direction), () => this.audio.trainStep(step, speed));
       if (onCarriage) await onCarriage(index, step);
     }
     this.tiles.forEach(tile => tile.classList.remove('train-trail'));

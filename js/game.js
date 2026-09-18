@@ -59,7 +59,8 @@ for (const channel of BET_CHANNELS) {
   const button = document.createElement('button');
   button.className = 'bet-key'; button.type = 'button'; button.dataset.channel = channel.key;
   button.setAttribute('aria-label', `${channel.label} 下注 1 分`);
-  button.innerHTML = `<span class="button-cap" aria-hidden="true"></span><span class="bet-key-label">${channel.label}</span>`;
+  button.style.setProperty('--button-symbol', `url('../assets/images/symbols/${channel.key.toLowerCase()}.png')`);
+  button.innerHTML = `<span class="button-cap" aria-hidden="true"><span class="button-symbol"></span></span><span class="bet-key-label">${channel.label}</span>`;
   betKeys.append(button); buttons.set(channel.key, button);
 }
 
@@ -97,11 +98,12 @@ for (const [key, button] of buttons) {
     clearTimeout(holdTimer); clearInterval(repeatTimer);
     holdTimer = null; repeatTimer = null; pointerActive = false;
   };
-  button.addEventListener('pointerdown', event => {
+  button.addEventListener('pointerdown', async event => {
     if (button.disabled) return;
     if (event.pointerType !== 'mouse') event.preventDefault();
     pointerActive = true;
-    audio.unlock().catch(() => {});
+    await audio.unlock().catch(() => {});
+    if (!pointerActive) return;
     const changed = engine.placeBet(key, 1);
     if (!changed) { button.classList.add('at-limit'); setTimeout(() => button.classList.remove('at-limit'), 160); }
     holdTimer = setTimeout(() => {
@@ -115,7 +117,7 @@ for (const [key, button] of buttons) {
     }, 480);
   });
   for (const event of ['pointerup','pointercancel','pointerleave']) button.addEventListener(event, release);
-  button.addEventListener('click', event => { if (event.detail === 0 && !pointerActive) engine.placeBet(key, 1); });
+  button.addEventListener('click', event => { if (event.detail === 0 && !pointerActive) { audio.unlock().then(() => engine.placeBet(key, 1)).catch(() => engine.placeBet(key, 1)); } });
   button.addEventListener('contextmenu', event => event.preventDefault());
   window.addEventListener('blur', release);
 }
