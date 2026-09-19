@@ -237,7 +237,7 @@ export class JackpotLightingSystem {
       await this.fx.timeline.cue(70,
         () => { this.fx.setPower(2); this.fx.show(indices); },
         () => this.fx.audio.hit(2));
-      await this.wait(120);
+      await this.wait(70);
     }
   }
 
@@ -299,25 +299,24 @@ export class JackpotLightingSystem {
     this.fx.centerFlash('FAIRY');
     this.fx.centerText('???');
     this.fx.audio.warning?.();
-    await this.wait(800);
+    await this.wait(620);
 
     // 2. the 天女散花 music starts and the banner appears
     this.fx.dim(false);
     ctx.onStart?.();
-    await this.wait(260);
+    await this.wait(200);
 
     // 3. lamp choreography, one beat per musical phrase
     const beats = [
-      () => shows.rings(ctx.target, 10, 52),
-      () => this.mirrorPairs(0, 11, 84),
-      () => shows.alternate(8, 82),
-      () => this.cornerBursts(0, 3),
+      () => shows.rings(ctx.target, 8, 40),
+      () => this.mirrorPairs(0, 9, 58),
+      () => shows.alternate(6, 62),
+      () => this.cornerBursts(0, 2),
       () => this.fruitGroups(ctx),
-      () => shows.chase(1, 34),
-      () => shows.reverseChase(1, 38),
-      () => this.centerOut(52),
-      () => this.mirrorPairs(1, 11, 74),
-      () => shows.wave(26)
+      () => shows.chase(1, 26),
+      () => shows.reverseChase(1, 30),
+      () => this.centerOut(40),
+      () => shows.wave(20)
     ];
     for (const beat of beats) {
       if (!this.running) return;
@@ -326,7 +325,7 @@ export class JackpotLightingSystem {
 
     // 4-5. centre rolls the multiplier: fast, then decelerating "哒" hits
     this.fx.centerText('???');
-    await this.wait(160);
+    await this.wait(120);
     if (ctx.onRoll) await ctx.onRoll();
 
     // 6. the whole cabinet goes dark for a beat
@@ -342,7 +341,7 @@ export class JackpotLightingSystem {
     this.fx.setPower(3);
     this.fx.show(shows.all);
     this.bus?.emit(E.JACKPOT_FINALE, { level: 'FAIRY', phase: 'finale' });
-    await this.wait(760);
+    await this.wait(560);
   }
 
   // Mirrored left/right pairs light together.
@@ -360,15 +359,15 @@ export class JackpotLightingSystem {
     const corners = indicesFor('APPLE');
     for (const index of corners) {
       for (let i = 0; i < flashes; i++) {
-        await this.fx.timeline.cue(i ? 70 : 1, () => this.fx.only(index), () => this.fx.audio.hit(2));
-        await this.wait(80);
+        await this.fx.timeline.cue(i ? 60 : 1, () => this.fx.only(index), () => this.fx.audio.hit(2));
+        await this.wait(70);
       }
     }
   }
 
   async centerOut(speed = 55) {
     const length = this.fx.tiles.length;
-    for (let step = 0; step < 12; step++) {
+    for (let step = 0; step < 10; step++) {
       const left = step, right = (length - step) % length;
       await this.fx.timeline.cue(step ? speed : 1,
         () => this.fx.show([left, right, (left + 6) % length, (right + 6) % length]),

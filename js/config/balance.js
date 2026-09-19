@@ -39,7 +39,7 @@ export const FAKE_OUT = Object.freeze({
 
 // Reveal length per celebration tier, in milliseconds (before scale).
 export const REVEAL_LENGTH = Object.freeze({
-  none: 380, small: 700, special: 800, medium: 1000, big: 1500, high: 1600, jackpot: 2200, fairy: 2600
+  none: 380, small: 700, special: 800, medium: 1000, big: 1500, high: 1600, jackpot: 2200, fairy: 1500
 });
 
 export function drawWeighted(weights, random = Math.random) {
