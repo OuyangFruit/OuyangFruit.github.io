@@ -21,6 +21,8 @@ const betDeck = $('bet-deck');
 const creditEl = $('credit'), winEl = $('win'), statusEl = $('status'), resultEl = $('result');
 const startButton = $('start'), clearButton = $('clear'), rebetButton = $('rebet'), soundButton = $('sound');
 const collectButton = $('collect'), oddButton = $('odd'), evenButton = $('even');
+const betTotalEl = $('bet-total-value'), betTotalBox = $('bet-total');
+const centerCaption = $('center-caption');
 winEl.parentElement.classList.add('win-box');
 creditEl.parentElement.classList.add('credit-box');
 const debugMode = new URLSearchParams(location.search).get('debug') === '1';
@@ -33,13 +35,6 @@ machine.dataset.art = artStyle;
 const audio = new AudioEngine();
 const bus = new GameEventBus();
 audio.bind(bus);
-const PRINT_LABELS = [
-  '10–20','10–20','×60','×120','×30','5–6','10–20',
-  '20–40','×3','','5–6','×3',
-  '10–20','10–20','×3','20–40','5–6','×3','10–20',
-  '20–40','×3','','5–6','×3'
-];
-
 const coordinates = [];
 for (let x = 1; x <= 7; x++) coordinates.push([x, 1]);
 for (let y = 2; y <= 6; y++) coordinates.push([7, y]);
@@ -52,8 +47,10 @@ const cells = BOARD_CELLS.map(cell => {
   tile.style.gridRow = coordinates[cell.index][1];
   tile.style.setProperty('--symbol-url', symbolUrl(cell.symbol));
   tile.style.setProperty('--tile-index', String(cell.index));
-  tile.innerHTML = `<span class="tile-art" aria-hidden="true"></span><span class="tile-print">${PRINT_LABELS[cell.index]}</span>`;
-  tile.setAttribute('aria-label', `${cell.index + 1} ${PRIZES[cell.symbol].label}`);
+  // The printed label comes from the payout table itself (js/config/board-payouts.js)
+  // so the lamp can never advertise one multiplier and settle another.
+  tile.innerHTML = `<span class="tile-art" aria-hidden="true"></span><span class="tile-print">${cell.label}</span>`;
+  tile.setAttribute('aria-label', `${cell.index + 1} ${PRIZES[cell.symbol].label} ${cell.label || '未中奖'}`);
   board.append(tile);
   return { ...cell, element: tile };
 });
@@ -62,11 +59,13 @@ const phaseLabels = {SPIN_START:'启动加速',SPINNING:'高速运行',SLOW_DOWN
 let engine;
 const runner = new LightRunner(cells, tiles, audio, phase => {
   if (engine && phaseLabels[phase]) engine.state(phase, phaseLabels[phase]);
+  machine.classList.toggle('spin-suspense', phase === 'SUSPENSE');
 }, scale, bus);
 const effects = new LightingEffects(tiles, machine, runner, audio, scale);
 const special = new SpecialEventEngine(runner, effects, audio);
 const funMode = new FunModeController({ enabled: true });
 const multiplier = new MultiplierController($('feature-value'), audio, scale, bus);
+multiplier.captionEl = centerCaption;
 const lighting = new JackpotLightingSystem(effects, { bus, scale });
 const celebration = new WinCelebrationController(machine, effects, lighting, audio, scale, bus);
 
@@ -98,6 +97,8 @@ function render(game) {
   startButton.disabled = game.busy || game.totalBet === 0;
   clearButton.disabled = game.busy || game.totalBet === 0;
   rebetButton.disabled = game.busy || !Object.values(game.lastBets).some(Boolean);
+  renderSevenSegment(betTotalEl, game.totalBet, 3);
+  betTotalBox.classList.toggle('active', game.totalBet > 0);
   const canGamble = !game.busy && game.win > 0;
   collectButton.disabled = !canGamble;
   oddButton.disabled = !canGamble;

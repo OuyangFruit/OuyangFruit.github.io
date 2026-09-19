@@ -30,6 +30,12 @@ export const ODD_EVEN = Object.freeze({
   digitRange: [1, 9]
 });
 
+// A special event never rewrites a lamp's printed multiplier. It adds a clearly
+// displayed bonus on top: BAR x60 + BONUS x2, shown to the player as both.
+export const SPECIAL_BONUS = Object.freeze({
+  SMALL_THREE: 2, BIG_THREE: 3, BIG_FOUR: 4, DOUBLE_CANNON: 3, TRAIN: 2, GRAND_SLAM: 5
+});
+
 // A jackpot-tier reveal may fake a stop, then jump to the real value.
 export const FAKE_OUT = Object.freeze({
   chance: .28,

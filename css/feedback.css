@@ -1,0 +1,146 @@
+/* Second-round feedback layer: lamp legibility, WIN emphasis, control sizing.
+   Loaded last so these rules win over the original panel styling. */
+
+/* ------------------------------------------------ active lamp (跑马灯) */
+.tile { transition: background 45ms, box-shadow 45ms, border-color 45ms, transform 45ms; }
+.tile.lit {
+  z-index: 1;
+  transform: scale(1.06);
+  border-color: #fff6c0;
+  background: radial-gradient(circle at 50% 42%, #fff3b0, #ffc247 55%, #ff8a1e);
+  box-shadow: inset 0 0 22px #fff8cf, 0 0 16px #ffd85e, 0 0 30px #ff9d21, 0 2px 6px #4a1500aa;
+}
+/* Higher specificity than the vector-art layer so the active lamp really pops. */
+.machine[data-art] .tile.lit .tile-art { filter: brightness(1.45) saturate(1.6) contrast(1.06); }
+.tile.lit::before {
+  background: radial-gradient(circle at 35% 30%, #fff, #fff6c0 34%, #ffd24d 72%, #f08a15);
+  border-color: #fffbe0;
+  box-shadow: 0 0 9px 4px #ffe89a, 0 0 20px 9px #ffb03c;
+}
+/* The trailing lamps stay visibly dimmer so the head of the run is obvious. */
+.tile.trail-1 { transform: scale(1.02); background: #ffc15a80; border-color: #ffe29caa; }
+.tile.trail-2 { background: #ffc96033; border-color: #ffcb7055; }
+
+/* Final 3-5 lamps: bigger, brighter, impossible to lose track of. */
+.machine.spin-suspense .tile.lit {
+  transform: scale(1.1);
+  box-shadow: inset 0 0 26px #fffbe0, 0 0 22px #ffd85e, 0 0 42px #ff8c1c, 0 2px 8px #4a1500cc;
+}
+
+/* Winning lamp stays locked on before anything else happens. */
+.tile.final {
+  z-index: 2;
+  transform: scale(1.08);
+  border-color: #fffbe0;
+  background: radial-gradient(circle at 50% 42%, #fff0b8, #ffc247 62%, #ff8f1d);
+  animation: winner-lock .5s ease-in-out infinite alternate;
+}
+/* Keep the fruit readable inside the locked winner - the glow does the work. */
+.machine[data-art] .tile.final .tile-art { filter: brightness(1.2) saturate(1.5) contrast(1.04); }
+@keyframes winner-lock {
+  from { box-shadow: inset 0 0 20px #fff6c6, 0 0 16px #ffcf55, 0 0 30px #ffa02a; }
+  to { box-shadow: inset 0 0 30px #ffffff, 0 0 26px #ffe08a, 0 0 52px #ffa52e, 0 3px 10px #4a1500cc; }
+}
+
+/* ------------------------------------------------ WIN / CREDIT emphasis */
+.win-box, .credit-box { position: relative; }
+.win-box { transition: box-shadow .18s ease, transform .18s ease; }
+/* Idle: WIN sits quieter than CREDIT so the two boxes are never confused. */
+.machine:not(.win-active) .win-box .led-digits { opacity: .8; }
+.machine.win-active .win-box {
+  box-shadow: inset 0 0 0 2px #ffe9a4, inset 0 0 26px #000, 0 0 20px 5px #ffab33;
+}
+.machine.win-active .win-box .led-digits {
+  opacity: 1;
+  filter: drop-shadow(0 0 6px #ffa23c) drop-shadow(0 0 14px #ff5a1a);
+}
+.machine.win-active .win-box .score-label { color: #fff0c0; text-shadow: 0 0 8px #ffb03c; }
+.machine.win-counting .win-box { animation: led-flicker .17s steps(2) infinite; }
+.machine.win-pop .win-box { animation: win-pop .34s cubic-bezier(.2,.9,.2,1) 3; }
+@keyframes win-pop {
+  0% { transform: scale(1) }
+  45% { transform: scale(1.15); filter: brightness(1.55) }
+  100% { transform: scale(1) }
+}
+.machine.win-pop .win-box .led-digits { filter: drop-shadow(0 0 8px #ffbe4a) drop-shadow(0 0 18px #ff5a1a); }
+/* Jackpot tiers pulse the WIN bezel instead of just dropping to static. */
+.machine[data-count-level="JACKPOT"].win-active .win-box,
+.machine[data-count-level="FAIRY"].win-active .win-box,
+.machine[data-count-level="HIGH_MULTIPLIER"].win-active .win-box {
+  animation: win-bezel .5s infinite alternate;
+}
+@keyframes win-bezel {
+  from { box-shadow: inset 0 0 0 2px #ffe9a4, inset 0 0 26px #000, 0 0 14px 3px #ff9a22; }
+  to { box-shadow: inset 0 0 0 3px #fff4c8, inset 0 0 30px #000, 0 0 30px 10px #ffc148; }
+}
+
+/* ------------------------------------------------ centre semantics */
+.center-caption {
+  position: absolute; left: 32%; width: 30%; top: 38.6%; z-index: 5;
+  text-align: center; pointer-events: none;
+  font: 900 clamp(7px,.95vw,11px)/1 Arial,"Microsoft YaHei",sans-serif;
+  letter-spacing: .2em; color: #ffd98a; text-shadow: 0 1px 2px #3d0b15;
+  opacity: .9;
+}
+.center-caption.caption-alt { color: #fff3c4; text-shadow: 0 0 8px #ff9a2c; }
+
+/* The centre display always floats above the printed photo. */
+.feature-led { z-index: 5; }
+.feature-led.multiplier-armed,
+.feature-led.multiplier-rolling,
+.feature-led.multiplier-reveal,
+.feature-led.digit-lock,
+.feature-led.center-symbol {
+  box-shadow: 0 0 0 3px #2f7192, inset 0 0 16px #0d0517, 0 0 24px 7px #ffb43c99;
+}
+/* The old machine photo is a backdrop now, not a competitor for attention. */
+.center-feature-photo { filter: saturate(.9) contrast(.98) brightness(.7); transition: filter .2s ease; }
+.machine.spin-suspense .center-feature-photo,
+.machine.win-active .center-feature-photo { filter: saturate(.62) contrast(.95) brightness(.42); }
+
+/* ------------------------------------------------ control sizing */
+/* 收分 / 单 / 双 are gameplay decisions, not helper keys. */
+.function-bank { grid-template-columns: 1fr 1fr 1fr 94px; gap: 6px; margin-top: 7px; }
+.function-bank .bank-key {
+  height: 52px;
+  font-size: 17px;
+  border-radius: 7px;
+  letter-spacing: .06em;
+}
+.function-bank .bank-key small { font-size: 8px; line-height: 9px; letter-spacing: .1em; }
+
+.bet-total {
+  display: grid; place-items: center; gap: 2px;
+  border: 2px inset #d5ad70; border-radius: 5px;
+  background: #3f101b; color: #ffd98a;
+  box-shadow: inset 0 0 6px #10070c;
+}
+.bet-total span { font-size: 7px; letter-spacing: .1em; opacity: .9; }
+.bet-total strong { display: flex; gap: 1px; }
+.bet-total .digit { --dw: clamp(8px, 1.25vw, 14px); }
+.bet-total.active { box-shadow: inset 0 0 6px #10070c, 0 0 12px 2px #ffbf4b; }
+
+/* Every bottom control gets a >=44px touch target, desktop and phone. */
+.function-key, .start-key { height: 44px; }
+.function-row { grid-template-columns: 62px 62px 58px 1fr 96px; gap: 4px; }
+
+/* START tells you whether it can actually start. */
+.start-key:disabled { filter: saturate(.5) brightness(.62); }
+.machine[data-state="READY_NEXT"] .start-key:not(:disabled) { box-shadow: 0 0 14px 4px #ffb04a, inset 0 2px 7px #fff5cc; }
+
+@media (max-width: 600px) {
+  .function-row { grid-template-columns: 54px 54px 50px 1fr 68px; gap: 3px; }
+  .function-key, .start-key { height: 44px; font-size: 11px; }
+  .function-key small, .start-key small { font-size: 6px; line-height: 7px; }
+  .function-bank .bank-key { height: 48px; font-size: 15px; }
+  .function-bank .bank-key small { font-size: 7px; line-height: 8px; }
+  .function-bank { grid-template-columns: 1fr 1fr 1fr 76px; gap: 4px; }
+  .bet-total span { font-size: 6px; }
+  .center-caption { font-size: 7px; letter-spacing: .12em; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .machine.win-pop .win-box,
+  .machine[data-count-level].win-active .win-box,
+  .tile.final { animation: none; }
+}

@@ -11,6 +11,8 @@ import { LightRunner } from '../js/light-runner.js';
 import { EXCITEMENT_TIERS } from '../js/config/special-events.js';
 import { MultiplierController, MULTIPLIER_POOLS } from '../js/MultiplierController.js';
 import { LOSE_EVENT_WEIGHTS, FAIRY_MULTIPLIERS, ODD_EVEN, drawWeighted, drawFromPool } from '../js/config/balance.js';
+import { BOARD_PAYOUTS, drawPayout, describeCell } from '../js/config/board-payouts.js';
+import { BOARD_MISMATCHES } from '../js/board-model.js';
 
 const noop = () => {};
 const audio = new Proxy({ unlock: async () => {}, enabled: true }, { get: (o, k) => o[k] || noop });
@@ -30,12 +32,6 @@ function fakeElement(initial = '32') {
       contains: name => classes.has(name)
     }
   };
-}
-
-// Deterministic RNG so the money model and the mystery table can be asserted.
-function seeded(values, fallback = .5) {
-  let i = 0;
-  return () => (i < values.length ? values[i++] : fallback);
 }
 
 function makeSandbox({ random = Math.random, credit = 100000 } = {}) {
@@ -76,6 +72,61 @@ function makeSandbox({ random = Math.random, credit = 100000 } = {}) {
 const eventsOf = bus => bus.stopRecording().map(entry => entry.type);
 
 // ------------------------------------------------------- round loop and event order
+// ------------------------------------- RULE CONSISTENCY: all 24 printed lamps
+{
+  assert.equal(BOARD_MISMATCHES.length, 0, 'the board and the payout table agree on every symbol');
+  assert.equal(BOARD_PAYOUTS.length, 24);
+
+  const { engine } = makeSandbox({ random: () => .5 });
+  engine.setAllBets(1);
+  const report = [];
+  for (let index = 0; index < 24; index++) {
+    const cell = BOARD_CELLS[index];
+    const printed = describeCell(index);
+    assert.equal(cell.label, printed.label, `lamp ${index} renders its config label`);
+
+    if (printed.payoutType === 'none') {
+      engine.forceLoseEvent('MISS');
+      await engine.start();
+      assert.equal(engine.win, 0, `lamp ${index} (未中奖) pays nothing`);
+      engine.collect();
+      report.push({ index, label: '(未中奖)', paid: 0, ok: true });
+      continue;
+    }
+
+    engine.forceCell(index);
+    await engine.start();
+    const bet = engine.roundBets[cell.betType];
+    const paid = engine.win / Math.max(1, bet);
+    if (printed.payoutType === 'fixed') {
+      assert.equal(paid, printed.min, `lamp ${index} ${printed.label} must pay exactly ×${printed.min}`);
+    } else {
+      assert.ok(paid >= printed.min && paid <= printed.max,
+        `lamp ${index} ${printed.label} paid ×${paid}, outside its printed window`);
+    }
+    report.push({ index, label: printed.label, symbol: printed.symbol, paid, ok: true });
+    engine.collect();
+  }
+  assert.equal(report.length, 24, 'every outer lamp was settled once');
+  assert.equal(new Set(report.map(entry => entry.index)).size, 24, 'no lamp was skipped');
+}
+
+// ------------------------------------------- BAR x60 / x120 / x30 spot check
+{
+  const { engine } = makeSandbox({ random: () => 0 });
+  engine.setAllBets(1);
+  for (const [index, expected] of [[2, 60], [3, 120], [4, 30]]) {
+    const cell = BOARD_CELLS[index];
+    assert.equal(cell.symbol, 'BAR', `lamp ${index} is a BAR lamp`);
+    assert.equal(cell.label, `×${expected}`, `lamp ${index} prints ×${expected}`);
+    engine.forceCell(index);
+    assert.equal(await engine.start(), true);
+    assert.equal(engine.win, engine.roundBets.bar * expected,
+      `lamp ${index} paid ${engine.win} instead of ${engine.roundBets.bar * expected}`);
+    engine.collect();
+  }
+}
+
 {
   const { engine, bus } = makeSandbox();
   engine.setAllBets(1);
@@ -124,7 +175,7 @@ const eventsOf = bus => bus.stopRecording().map(entry => entry.type);
 
 // ------------------------------------------------------ 单双 keeps CREDIT intact
 {
-  const { engine } = makeSandbox({ random: seeded([0.1]) }); // < .5 wins the challenge
+  const { engine } = makeSandbox({ random: () => 0.1 }); // < .5 wins the challenge
   engine.setAllBets(1);
   engine.forcePrize('BELL');
   await engine.start();
@@ -134,7 +185,7 @@ const eventsOf = bus => bus.stopRecording().map(entry => entry.type);
   assert.equal(engine.win, winBefore * 2, 'a winning 单双 doubles the pending WIN');
   assert.equal(engine.credit, creditBefore, 'CREDIT is untouched by 单双');
 
-  const { engine: loser } = makeSandbox({ random: seeded([0.9]) }); // >= .5 loses the challenge
+  const { engine: loser } = makeSandbox({ random: () => 0.9 }); // >= .5 loses the challenge
   loser.setAllBets(1);
   loser.forcePrize('BELL');
   await loser.start();
@@ -180,7 +231,7 @@ const eventsOf = bus => bus.stopRecording().map(entry => entry.type);
 
 // ------------------------------------------------------------- 天女散花 payout
 {
-  const { engine, bus, levels } = makeSandbox({ random: seeded([0.99, 0.5, 0.5]) });
+  const { engine, bus, levels } = makeSandbox({ random: () => 0.5 });
   engine.setAllBets(1);
   engine.forceLoseEvent('FAIRY');
   await engine.start();

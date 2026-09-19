@@ -15,6 +15,7 @@
   <link rel="stylesheet" href="./css/jackpot.css">
   <link rel="stylesheet" href="./css/art.css">
   <link rel="stylesheet" href="./css/betboard.css">
+  <link rel="stylesheet" href="./css/feedback.css">
 </head>
 <body>
   <main class="machine" aria-label="经典实体水果机">
@@ -32,6 +33,7 @@
         <i data-event="DOUBLE_CANNON"></i><i data-event="TRAIN"></i><i data-event="GRAND_SLAM"></i>
       </div>
       <div class="board" id="board"></div>
+      <div class="center-caption" id="center-caption" aria-hidden="true">MULTIPLIER</div>
       <div class="feature-led led-digits" id="feature-value" aria-label="中央功能盘数值">32</div>
       <div class="center-result" id="result" aria-live="polite"></div>
       <div class="celebration-layer" id="celebration-layer" aria-hidden="true"></div>
@@ -53,6 +55,7 @@
         <button id="collect" class="bank-key collect-key" type="button" disabled>收分 <small>COLLECT</small></button>
         <button id="odd" class="bank-key" type="button" disabled>单 <small>ODD</small></button>
         <button id="even" class="bank-key" type="button" disabled>双 <small>EVEN</small></button>
+        <div class="bet-total" id="bet-total"><span>本局下注</span><strong class="led-digits" id="bet-total-value">0</strong></div>
       </div>
       <div class="deck-footer"><span>纯娱乐虚拟积分</span><span>严禁赌博　仅供娱乐</span></div>
     </section>

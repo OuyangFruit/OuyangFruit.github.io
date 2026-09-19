@@ -17,15 +17,14 @@ export function setupDebug(engine) {
     <label for="forced">普通开奖目标</label>
     <select id="forced"><option value="">随机</option><option value="APPLE">苹果</option><option value="BELL">铃铛</option><option value="SEVEN">蓝九</option><option value="BAR">BAR</option><option value="LOSE">未中奖</option></select>
     <button type="button" data-normal>普通开奖</button>
-    <label for="forced-mult">强制倍率档</label>
-    <select id="forced-mult"><option value="">跟随水果</option><option value="small">小倍率</option><option value="big">大倍率</option><option value="jackpot">Jackpot</option><option value="high">高倍率</option></select>
-    <button type="button" data-target-mult>用指定倍率开一局</button>
     ${SPECIAL_BUTTONS.map(([type, label]) => `<button type="button" data-special="${type}">${label}</button>`).join('')}
     <label for="forced-mystery">未中奖事件</label>
     <select id="forced-mystery">${MYSTERY_BUTTONS.map(([type, label]) => `<option value="${type}">${label}</option>`).join('')}</select>
     <button type="button" data-mystery>触发未中奖事件</button>
+    <label for="forced-cell">指定外围格 1-24</label>
+    <select id="forced-cell">${Array.from({ length: 24 }, (_, i) => `<option value="${i}">${i + 1}</option>`).join('')}</select>
+    <button type="button" data-cell>强制停在此格</button>
     <button type="button" data-surprise>惊喜加码</button>
-    <button type="button" data-highmult>高倍率水果</button>
     <button type="button" data-double>自动单双（用现有 WIN）</button>
     <button type="button" data-stress>连跑 20 局</button>
     <button type="button" data-add-credit>+1000 CREDIT</button>
@@ -35,8 +34,12 @@ export function setupDebug(engine) {
     <button type="button" data-reset>重置积分</button>
     <output data-stats></output>`;
   const stats = panel.querySelector('[data-stats]');
-  const tierSelect = panel.querySelector('#forced-mult');
   const mysterySelect = panel.querySelector('#forced-mystery');
+  const cellSelect = panel.querySelector('#forced-cell');
+  // The select can lag behind a synthetic click, so remember the choice as soon
+  // as the user changes it.
+  let pendingCell = 0;
+  cellSelect.addEventListener('change', () => { pendingCell = Number(cellSelect.value); });
   const report = text => { stats.textContent = text; };
 
   async function stress(rounds = 20) {
@@ -54,12 +57,7 @@ export function setupDebug(engine) {
     const button = event.target.closest('button');
     if (!button || engine.busy) return;
     if (button.dataset.normal !== undefined) {
-      engine.forceMultiplierTier(tierSelect.value);
       engine.forcePrize(panel.querySelector('#forced').value);
-      engine.start();
-    } else if (button.dataset.targetMult !== undefined) {
-      engine.forceMultiplierTier(tierSelect.value || 'jackpot');
-      engine.forcePrize('BELL');
       engine.start();
     } else if (button.dataset.special) {
       engine.forceSpecial(button.dataset.special);
@@ -67,14 +65,11 @@ export function setupDebug(engine) {
     } else if (button.dataset.mystery !== undefined) {
       engine.forceLoseEvent(mysterySelect.value);
       engine.start();
+    } else if (button.dataset.cell !== undefined) {
+      engine.forceCell(Number(cellSelect.value || pendingCell));
+      engine.start();
     } else if (button.dataset.surprise !== undefined) {
       engine.forceSurprise();
-      engine.start();
-    } else if (button.dataset.highmult !== undefined) {
-      engine.forceMultiplierTier(tierSelect.value || 'high');
-      engine.forcedSurprise = false;
-      engine.forcedSpecial = '';
-      engine.forcedPrize = 'STAR';
       engine.start();
     } else if (button.dataset.double !== undefined) {
       if (!engine.win) { engine.forcePrize('BELL'); engine.start().then(() => engine.oddEven('odd')); }

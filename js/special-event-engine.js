@@ -1,6 +1,8 @@
 import { BOARD_CELLS, indicesFor, pickIndex } from './board-model.js';
 import { PRIZES } from './prize-table.js';
 import { GAME_EVENTS as E } from './game-events.js';
+import { SPECIAL_BONUS } from './config/balance.js';
+import { drawPayout } from './config/board-payouts.js';
 
 const TYPES = Object.freeze({
   SMALL_THREE: '小三元', BIG_THREE: '大三元', BIG_FOUR: '大四喜',
@@ -55,16 +57,20 @@ export class SpecialEventEngine {
     ctx.state('SPECIAL_RUNNING', `${TYPES[ctx.event]} · 第 ${step} 次跑灯`);
     const target = index ?? pickIndex(symbol);
     const cell = BOARD_CELLS[target];
+    const eventLabel = TYPES[ctx.event] ?? ctx.event;
+    const bonus = SPECIAL_BONUS[ctx.event] ?? 2;
     await ctx.spin(target, { loops, special: true, tempo });
     const tier = cell.multiplier >= 50 ? 'jackpot' : power >= 2 ? 'big' : 'small';
     const wagered = ctx.betFor(cell.betType) > 0 && cell.multiplier > 0;
     ctx.emit?.(E.FRUIT_HIT, { symbol, tier, index: target, wagered });
     this.effects.betWindowFlash(symbol);
-    let multiplier = cell.multiplier;
+    // The lamp's own printed value, then the event bonus on top. Both are shown.
+    const base = drawPayout(target, ctx.random ?? Math.random);
+    let multiplier = base;
     if (wagered) {
-      multiplier = ctx.multiplier.choose(ctx.forcedTier || multiplierTier);
       if (flashes !== 0) await this.effects.flashCell(target, flashes ?? 2, power);
-      await ctx.multiplier.quickReveal(multiplier, '', 'special');
+      await ctx.multiplier.quickReveal(base, `${eventLabel} BONUS ×${bonus}`, 'special');
+      multiplier = base * bonus;
     }
     await ctx.settle(BOARD_CELLS[target], { multiplier, countDuration });
     return target;

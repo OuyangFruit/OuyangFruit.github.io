@@ -3,6 +3,7 @@ import { BOARD_CELLS, calculateWin, pickIndex, indicesFor } from './board-model.
 import { BET_TYPES, toBetType } from './bet-types.js';
 import { GAME_EVENTS as E } from './game-events.js';
 import { EXCITEMENT_TIERS, isSpecial } from './config/special-events.js';
+import { drawPayout, payoutRange } from './config/board-payouts.js';
 import {
   LOSE_EVENT_WEIGHTS, LOSE_EVENT_PAYOUT, FAIRY_MULTIPLIERS, ODD_EVEN,
   drawWeighted, drawFromPool
@@ -37,6 +38,12 @@ const MYSTERY_LABEL = Object.freeze({
 });
 const MAX_WIN = 999999;
 
+// Reveal length follows the real printed value, not the symbol tier.
+const payoutTier = value =>
+  value >= 50 ? 'jackpot' : value >= 20 ? 'big' : value >= 8 ? 'medium' : 'small';
+
+const integerPool = ({ min, max }) => (max > min ? Array.from({ length: max - min + 1 }, (_, i) => min + i) : null);
+
 export class GameEngine {
   constructor({ runner, effects, special, audio, funMode, multiplier, celebration, lighting, bus, onChange, initialCredit = 1000, random = Math.random }) {
     this.runner = runner; this.effects = effects; this.special = special; this.audio = audio;
@@ -59,6 +66,7 @@ export class GameEngine {
     this.forcedSurprise = false;
     this.forcedMultiplierTier = '';
     this.forcedLoseEvent = '';
+    this.forcedCellIndex = null;
     this.doubleChallenges = 0;
     this.roundsPlayed = 0;
     this.emit();
@@ -113,12 +121,17 @@ export class GameEngine {
     this.state('IDLE', '积分已重置');
   }
 
-  forcePrize(key) { this.forcedPrize = key; this.forcedSpecial = ''; this.forcedSurprise = false; this.forcedLoseEvent = ''; }
-  forceSpecial(type) { this.forcedSpecial = type; this.forcedPrize = ''; this.forcedSurprise = false; this.forcedLoseEvent = ''; }
-  forceSurprise() { this.forcedSurprise = true; this.forcedPrize = ''; this.forcedSpecial = ''; this.forcedLoseEvent = ''; }
-  forceLoseEvent(type) { this.forcedLoseEvent = type; this.forcedPrize = 'LOSE'; this.forcedSpecial = ''; this.forcedSurprise = false; }
+  forcePrize(key) { this.forcedPrize = key; this.forcedSpecial = ''; this.forcedSurprise = false; this.forcedLoseEvent = ''; this.forcedCellIndex = null; }
+  forceSpecial(type) { this.forcedSpecial = type; this.forcedPrize = ''; this.forcedSurprise = false; this.forcedLoseEvent = ''; this.forcedCellIndex = null; }
+  forceSurprise() { this.forcedSurprise = true; this.forcedPrize = ''; this.forcedSpecial = ''; this.forcedLoseEvent = ''; this.forcedCellIndex = null; }
+  forceLoseEvent(type) { this.forcedLoseEvent = type; this.forcedPrize = 'LOSE'; this.forcedSpecial = ''; this.forcedSurprise = false; this.forcedCellIndex = null; }
+  // Pin the lamps to one exact lamp index: used by the rule-consistency audit.
+  forceCell(index) { this.forcedCellIndex = index; this.forcedPrize = ''; this.forcedSpecial = ''; this.forcedSurprise = false; this.forcedLoseEvent = ''; }
   forceMultiplierTier(tier = '') { this.forcedMultiplierTier = tier; }
-  clearForced() { this.forcedPrize = ''; this.forcedSpecial = ''; this.forcedSurprise = false; this.forcedMultiplierTier = ''; this.forcedLoseEvent = ''; }
+  clearForced() {
+    this.forcedPrize = ''; this.forcedSpecial = ''; this.forcedSurprise = false;
+    this.forcedMultiplierTier = ''; this.forcedLoseEvent = ''; this.forcedCellIndex = null;
+  }
 
   stats() {
     return {
@@ -132,6 +145,7 @@ export class GameEngine {
   decide() {
     if (this.forcedSpecial) return { kind: 'special', type: this.forcedSpecial };
     if (this.forcedSurprise) return { kind: 'surprise' };
+    if (this.forcedCellIndex !== null && this.forcedCellIndex !== undefined) return { kind: 'normal', cellIndex: this.forcedCellIndex };
     if (this.forcedPrize) return { kind: 'normal', symbol: this.forcedPrize };
     const excitement = this.funMode?.draw() ?? '';
     if (!excitement) return { kind: 'normal' };
@@ -171,7 +185,7 @@ export class GameEngine {
     const steps = Math.min(64, Math.max(6, Math.round(duration / 30)));
     this.event(E.WIN_START, { amount, level });
     this.effects.cabinet.dataset.countLevel = level;
-    this.effects.cabinet.classList.add('win-counting');
+    this.effects.cabinet.classList.add('win-counting', 'win-active');
     this.state('WIN_COUNTING', `WIN +${amount}`);
     for (let step = 1; step <= steps; step++) {
       this.win = from + Math.floor(amount * step / steps);
@@ -182,15 +196,22 @@ export class GameEngine {
     this.win = from + amount;
     this.effects.cabinet.classList.remove('win-counting');
     delete this.effects.cabinet.dataset.countLevel;
+    // Final hit: the WIN window pops to ~1.15x, flashes, then settles back.
+    this.effects.cabinet.classList.add('win-pop');
+    clearTimeout(this.winPopTimer);
+    this.winPopTimer = setTimeout(() => this.effects.cabinet.classList.remove('win-pop', 'win-active'),
+      Math.max(160, 1500 * (this.effects.scale ?? 1)));
     this.event(E.WIN_END, { amount, level, pending: this.win });
     this.emit();
   }
 
-  async settle(cell, { special = false, countDuration, multiplier = cell.multiplier, level = '' } = {}) {
-    const amount = calculateWin(cell.symbol, this.roundBets[cell.betType], multiplier);
+  async settle(cell, { special = false, countDuration, multiplier = cell.multiplier, level = '', bet = null } = {}) {
+    const amount = calculateWin(cell.symbol, bet ?? this.roundBets[cell.betType], multiplier);
     if (special) this.state('SPECIAL_SETTLEMENT', `${PRIZES[cell.symbol].label} · +${amount}`);
     else this.state('NORMAL_WIN', `${PRIZES[cell.symbol].label} · ${amount ? `中奖 ${amount}` : '未押中'}`);
     if (amount) await this.countWin(amount, countDuration ?? COUNT_DURATION[level] ?? 500, level);
+    // Let the result sit on screen instead of snapping to the next state.
+    await this.effects.wait(level === 'JACKPOT' || level === 'FAIRY' ? 1400 : 900);
     return amount;
   }
 
@@ -220,7 +241,7 @@ export class GameEngine {
     this.state('SPIN_START', '跑灯开始');
 
     const plan = this.decide();
-    this.forcedPrize = ''; this.forcedSpecial = ''; this.forcedSurprise = false;
+    this.forcedPrize = ''; this.forcedSpecial = ''; this.forcedSurprise = false; this.forcedCellIndex = null;
     this.event(E.ROUND_START, { round: this.roundsPlayed, kind: plan.kind });
     try {
       await this.audio.unlock();
@@ -256,24 +277,40 @@ export class GameEngine {
     return tier === 'jackpot' ? 'jackpot' : 'normal';
   }
 
-  // The centre reveal for a paying ordinary fruit.
-  async revealWin(cell, symbol, poolTier) {
-    const tier = PRIZES[symbol].tier;
-    const multiplier = this.multiplierFor(poolTier || tier);
-    const revealTier = poolTier === 'high' ? 'high' : tier;
-    await this.multiplier.land(multiplier, {
-      tier: revealTier,
-      label: poolTier === 'high' ? REVEAL_LABEL.HIGH_MULTIPLIER : ''
-    });
+  // The settlement the player watches, in order:
+  //   which lamp  ->  the lamp's printed multiplier  ->  BET x multiplier  ->  WIN
+  // The multiplier is read from the lamp's own payout record, so the printed
+  // label and the money can never disagree.
+  async revealWin(cell, symbol, { bonus = 0, bonusLabel = '', betOverride = null } = {}) {
+    const payout = drawPayout(cell.index, this.random);
+    const range = payoutRange(cell.index);
+    const pool = cell.payoutType === 'range' ? integerPool(range) : null;
+
+    // 1. Tell the player where the lamps stopped.
+    this.multiplier.showSymbol(PRIZES[symbol].label);
+    await this.effects.wait(460);
+
+    // 2. Reveal the multiplier: range lamps only roll inside their printed window.
+    await this.multiplier.land(payout, { tier: payoutTier(payout), label: '', pool });
+
     this.effects.betWindowFlash(symbol);
     this.effects.tiles[cell.index].classList.add('final');
-    const amount = calculateWin(symbol, this.roundBets[cell.betType], multiplier);
-    const level = poolTier === 'high' ? 'HIGH_MULTIPLIER' : this.celebration.classify(amount, multiplier);
+
+    // 3. Show the arithmetic.
+    const bet = betOverride ?? this.roundBets[cell.betType] ?? 0;
+    const amount = bet * payout * (bonus || 1);
+    this.multiplier.showFormula(bonus ? `BET ${bet} × ${payout} × ${bonus}` : `BET ${bet} × ${payout}`);
+    await this.effects.wait(560);
+    this.multiplier.showFormula(`WIN ${amount}`, 'WIN');
+    await this.effects.wait(320);
+
+    const level = bonus ? 'SPECIAL_EVENT' : this.celebration.classify(amount, payout);
     await this.celebration.play(level, cell.index, {
-      label: REVEAL_LABEL[level] ?? '', symbols: [symbol], indices: indicesFor(symbol), target: cell.index
+      label: bonusLabel || REVEAL_LABEL[level] || '', symbols: [symbol],
+      indices: indicesFor(symbol), target: cell.index
     });
-    await this.settle(cell, { multiplier, level });
-    return { multiplier, level, amount };
+    await this.settle(cell, { multiplier: payout * (bonus || 1), level, bet });
+    return { multiplier: payout, level, amount: this.win };
   }
 
   async playNormal(plan = {}) {
@@ -285,19 +322,24 @@ export class GameEngine {
       this.funMode?.noteEvent?.('HIGH_MULTIPLIER');
     }
     if (!symbol) symbol = drawPrize('');
-    const cell = BOARD_CELLS[pickIndex(symbol)];
+    const cell = plan.cellIndex === undefined ? BOARD_CELLS[pickIndex(symbol)] : BOARD_CELLS[plan.cellIndex];
+    symbol = cell.symbol;
     const tier = PRIZES[symbol].tier;
     const wagered = (this.roundBets[cell.betType] || 0) > 0;
-    const pays = wagered && cell.multiplier > 0 && tier !== 'none';
+    const pays = wagered && cell.pays;
 
     await this.runner.spinTo(cell.index, { tier: this.spinTierFor(symbol, plan) });
-    await this.effects.wait(this.suspense());
+    // The winning lamp holds its full-strength glow before anything else moves,
+    // so the player always learns "where did I land" first.
+    if (pays) this.effects.tiles[cell.index].classList.add('final');
+    await this.effects.wait(pays ? 900 : this.suspense());
     this.event(E.FRUIT_HIT, { symbol, tier, index: cell.index, wagered });
 
     if (!pays) return this.playLoseMystery(cell);
 
-    const { level } = await this.revealWin(cell, symbol, poolTier);
-    this.status = `${PRIZES[symbol].label}中奖 · 赢得 ${this.win} 分`;
+    const { level, multiplier } = await this.revealWin(cell, symbol,
+      poolTier === 'high' ? { bonusLabel: REVEAL_LABEL.HIGH_MULTIPLIER } : {});
+    this.status = `${PRIZES[symbol].label} ${cell.label} → ×${multiplier} · 赢得 ${this.win} 分`;
     return { status: this.status, outcome: 'win', level };
   }
 
@@ -333,19 +375,13 @@ export class GameEngine {
       while (!symbol || symbol === 'LOSE') symbol = drawPrize('');
       const next = BOARD_CELLS[pickIndex(symbol)];
       await this.runner.spinTo(next.index, { tier: 'normal' });
-      await this.effects.wait(this.suspense());
-      this.event(E.FRUIT_HIT, { symbol, tier: PRIZES[symbol].tier, index: next.index, wagered: true });
-      const multiplier = this.multiplierFor(PRIZES[symbol].tier);
-      await this.multiplier.land(multiplier, { tier: PRIZES[symbol].tier, label: 'AGAIN!' });
-      this.effects.betWindowFlash(symbol);
       this.effects.tiles[next.index].classList.add('final');
-      const amount = Math.min(MAX_WIN, this.roundStake * multiplier);
-      const level = this.celebration.classify(amount, multiplier);
-      await this.celebration.play(level, next.index, { label: '再转一次', symbols: [symbol], indices: indicesFor(symbol), target: next.index });
-      this.win += amount;
-      this.emit();
-      await this.effects.wait(200);
-      this.status = `再转一次 · ${PRIZES[symbol].label} ×${multiplier} · WIN +${amount}`;
+      await this.effects.wait(760);
+      this.event(E.FRUIT_HIT, { symbol, tier: PRIZES[symbol].tier, index: next.index, wagered: true });
+      // The free spin pays the lamp's own printed rule, measured against the
+      // round stake so a player who did not back that fruit still wins something.
+      const { level, multiplier } = await this.revealWin(next, symbol, { betOverride: this.roundStake });
+      this.status = `再转一次 · ${PRIZES[symbol].label} ${next.label} → ×${multiplier} · WIN ${this.win}`;
       return { status: this.status, outcome: 'win', level };
     }
 
@@ -353,8 +389,14 @@ export class GameEngine {
 
     const multiplier = drawFromPool(LOSE_EVENT_PAYOUT[outcome]);
     this.event(E.MYSTERY_RESULT, { outcome, multiplier });
+    this.multiplier.showSymbol(MYSTERY_LABEL[outcome]);
+    await this.effects.wait(380);
     await this.multiplier.land(multiplier, { tier: 'special', label: MYSTERY_LABEL[outcome] });
     const amount = Math.min(MAX_WIN, this.roundStake * multiplier);
+    this.multiplier.showFormula(`BET ${this.roundStake} × ${multiplier}`, 'BONUS');
+    await this.effects.wait(520);
+    this.multiplier.showFormula(`WIN ${amount}`, 'WIN');
+    await this.effects.wait(280);
     const level = outcome === 'MYSTERY' ? 'BIG_WIN' : outcome === 'RANDOM_MULTIPLIER' ? 'MEDIUM_WIN' : 'SMALL_WIN';
     await this.celebration.play(level, cell.index, { label: MYSTERY_LABEL[outcome], indices: [], target: cell.index });
     this.win += amount;
@@ -437,11 +479,18 @@ export class GameEngine {
   // --------------------------------------------------------- 惊喜 / 特殊奖
   async playSurprise() {
     this.funMode?.noteEvent?.('SURPRISE_BONUS');
-    const bonus = 120 + Math.floor(Math.random() * 9) * 40;
-    const multiplier = this.multiplierFor('high');
+    // The surprise pays the multiplier it shows, measured against the stake.
+    const multiplier = drawFromPool([2, 3, 5, 8]);
+    const bonus = Math.min(MAX_WIN, this.roundStake * multiplier);
     await this.runner.spinTo(pickIndex('BAR'), { tier: 'jackpot' });
-    await this.effects.wait(this.suspense());
-    await this.multiplier.land(multiplier, { tier: 'high', label: 'BONUS!' });
+    await this.effects.wait(700);
+    this.multiplier.showSymbol('惊喜加码');
+    await this.effects.wait(380);
+    await this.multiplier.land(multiplier, { tier: 'medium', label: 'BONUS' });
+    this.multiplier.showFormula(`BET ${this.roundStake} × ${multiplier}`, 'BONUS');
+    await this.effects.wait(520);
+    this.multiplier.showFormula(`WIN ${bonus}`, 'WIN');
+    await this.effects.wait(280);
     this.win += bonus;
     this.event(E.SURPRISE_BONUS, { bonus, multiplier });
     this.emit();
@@ -465,6 +514,7 @@ export class GameEngine {
       emit: (name, payload) => this.event(name, payload),
       betFor: betType => this.roundBets[betType] || 0,
       multiplier: this.multiplier,
+      random: this.random,
       forcedTier: this.forcedMultiplierTier,
       celebrate: (level, options = {}) => this.celebration.play(level, options.target ?? this.runner.index, { announce: false, ...options }),
       settle: (cell, options) => this.settle(cell, { special: true, ...options })
