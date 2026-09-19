@@ -1,5 +1,6 @@
 import { SynthEffects } from './SynthEffects.js';
 import { SampleManager } from './SampleManager.js';
+import { AUDIO_ASSETS, LIBRARY_SAMPLES } from './AudioAssetMap.js';
 
 const NATIVE_SAMPLES = Object.freeze({
   start: './assets/audio/native/arcade-start.mp3',
@@ -48,10 +49,16 @@ export class AudioEngine {
       this.mechanical = new SynthEffects(this.context, this.mechanicalGain, this.synth.noiseBuffer);
       this.jackpot = new SynthEffects(this.context, this.jackpotGain, this.synth.noiseBuffer);
       this.samples = new SampleManager(this.context, this.sfxGain);
+      this.musicSamples = new SampleManager(this.context, this.musicGain);
+      this.lastPlayedTrack = '';
       // Decode once and reuse AudioBuffers. Playback never creates HTMLAudioElement nodes.
-      this.sampleReady = this.samples.preload(NATIVE_SAMPLES);
+      this.sampleReady = Promise.all([
+        this.samples.preload({...NATIVE_SAMPLES, ...LIBRARY_SAMPLES}),
+        this.musicSamples.preload(LIBRARY_SAMPLES)
+      ]);
     }
     if (this.context.state === 'suspended') await this.context.resume();
+    await this.sampleReady;
   }
   setEnabled(enabled) {
     this.enabled = enabled;
@@ -62,6 +69,29 @@ export class AudioEngine {
   routed(bus, method, ...args) { if (this.enabled && this[bus]) this[bus][method](...args); }
   button(repeat = false) { this.routed('mechanical', 'button', repeat); }
   sample(key, options) { return Boolean(this.enabled && this.samples?.play(key, options)); }
+  music(key, volume = .5) {
+    if (!this.enabled || !key) return false;
+    this.musicSamples?.stop('music');
+    this.lastPlayedTrack = key;
+    return Boolean(this.musicSamples?.play(key, { volume, group: 'music', replace: true }));
+  }
+  stopMusic() { this.musicSamples?.stop('music'); }
+  randomFrom(pool) {
+    const choices = pool.filter(key => key !== this.lastPlayedTrack);
+    return (choices.length ? choices : pool)[Math.floor(Math.random() * (choices.length || pool.length))];
+  }
+  playRandomRoundMusic() { return this.music(this.randomFrom(AUDIO_ASSETS.randomMusic), .34); }
+  playHighLowLoss() { return this.music(this.randomFrom(AUDIO_ASSETS.highLowLose), .46); }
+  playWinMusic(level) {
+    if (level === 'JACKPOT' || level === 'SPECIAL_EVENT') return this.music(this.randomFrom(AUDIO_ASSETS.jackpotMusic), .58);
+    if (level === 'BIG_WIN' || level === 'MEDIUM_WIN' || level === 'SMALL_WIN') return this.music(AUDIO_ASSETS.smallWinMusic, .45);
+    return this.music(AUDIO_ASSETS.normalWinMusic, .32);
+  }
+  multiplierRoll(active) {
+    if (!active) return this.samples?.stop('multiplier-roll');
+    return this.sample(AUDIO_ASSETS.multiplierRoll, { volume:.22, group:'multiplier-roll', replace:true });
+  }
+  multiplierReveal() { return this.sample(AUDIO_ASSETS.multiplierReveal, { volume:.42, group:'reveal', replace:true }); }
   startKick() {
     if (!this.sample('start', { volume: .38, group: 'start', replace: true })) this.routed('mechanical', 'startKick');
   }
@@ -80,9 +110,11 @@ export class AudioEngine {
   brake() { this.sound('brake'); }
   fanfare() { this.routed('jackpot', 'fanfare'); }
   credit() {
-    if (!this.sample('creditStart', { volume: .28, group: 'credit' })) this.routed('synth', 'coin', 1);
+    if (!this.sample(AUDIO_ASSETS.credit, { volume: .3, group: 'credit', replace:true }) && !this.sample('creditStart', { volume: .28, group: 'credit' })) this.routed('synth', 'coin', 1);
   }
   prize(symbol, tier = 'small') {
+    const libraryKey = AUDIO_ASSETS.fruit[symbol];
+    if (libraryKey && this.sample(libraryKey, {volume:tier==='jackpot'?.4:.26,group:'prize'})) return;
     const sampleKey = symbol === 'ORANGE' ? 'orange' : symbol === 'LEMON' ? 'lemon' :
       symbol === 'SEVEN' ? 'doubleSeven' : tier === 'jackpot' ? 'jackpotSong' :
       tier === 'big' ? 'bigWinChase' : '';
@@ -93,9 +125,13 @@ export class AudioEngine {
     this.hit(tier === 'jackpot' ? 3 : tier === 'big' ? 2 : 1);
   }
   specialEvent(type) {
+    if (type === 'BIG_FOUR') {
+      this.sample(AUDIO_ASSETS.bigFourHits, { volume:.48, group:'event', replace:true });
+      return this.music(AUDIO_ASSETS.bigFourMusic, .55);
+    }
     const sampleKey = {
-      BIG_THREE: 'bigWinChase', BIG_FOUR: 'jackpotSong', DOUBLE_CANNON: 'doubleCannon',
-      GRAND_SLAM: 'randomMultiplier'
+      BIG_THREE: 'bigWinChase', DOUBLE_CANNON: AUDIO_ASSETS.doubleHit,
+      GRAND_SLAM: AUDIO_ASSETS.jackpotHit
     }[type];
     if (!sampleKey) return false;
     return this.sample(sampleKey, { volume: type === 'BIG_FOUR' ? .46 : .4, group: 'event', replace: true });
