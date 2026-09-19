@@ -1,13 +1,13 @@
 import { EventTimeline } from './event-timeline.js';
 
 export class LightingEffects {
-  constructor(tiles, cabinet, runner, audio, scale = 1) {
+  constructor(tiles, cabinet, runner, audio, scale = 1, timeline = null) {
     this.tiles = tiles;
     this.cabinet = cabinet;
     this.runner = runner;
     this.audio = audio;
     this.scale = scale;
-    this.timeline = new EventTimeline(scale);
+    this.timeline = timeline || new EventTimeline(scale);
     this.featureValue = document.getElementById('feature-value');
   }
   wait(ms) { return this.timeline.wait(ms); }

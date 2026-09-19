@@ -12,6 +12,7 @@ import { FunModeController } from './FunModeController.js';
 import { MultiplierController } from './MultiplierController.js';
 import { LightShowEngine } from './LightShowEngine.js';
 import { WinCelebrationController } from './WinCelebrationController.js';
+import { RoundDirector } from './RoundDirector.js';
 
 const $ = id => document.getElementById(id);
 const machine = document.querySelector('.machine');
@@ -21,6 +22,7 @@ const startButton = $('start'), clearButton = $('clear'), rebetButton = $('rebet
 const debugMode = new URLSearchParams(location.search).get('debug') === '1';
 const scale = debugMode && new URLSearchParams(location.search).get('test') === '1' ? .02 : 1;
 const audio = new AudioEngine();
+const director = new RoundDirector({scale});
 const PRINT_LABELS = [
   '10–20','10–20','×60','×120','×30','5–6','10–20',
   '20–40','×3','','5–6','×3',
@@ -49,12 +51,12 @@ const phaseLabels = {SPIN_START:'启动加速',SPINNING:'高速运行',SLOW_DOWN
 let engine;
 const runner = new LightRunner(cells, tiles, audio, phase => {
   if (engine && phaseLabels[phase]) engine.state(phase, phaseLabels[phase]);
-}, scale);
-const effects = new LightingEffects(tiles, machine, runner, audio, scale);
-const special = new SpecialEventEngine(runner, effects, audio);
+}, scale, director);
+const effects = new LightingEffects(tiles, machine, runner, audio, scale, director);
 const funMode = new FunModeController({ enabled: true });
-const multiplier = new MultiplierController($('feature-value'), audio, scale);
+const multiplier = new MultiplierController($('feature-value'), audio, scale, director);
 const lightShows = new LightShowEngine(effects);
+const special = new SpecialEventEngine(runner, effects, audio, lightShows);
 const celebration = new WinCelebrationController(machine, effects, lightShows, audio, scale);
 
 const lanes = new Map(), buttons = new Map();
@@ -93,7 +95,7 @@ function render(game) {
     button.disabled = game.busy;
   }
 }
-engine = new GameEngine({ runner, effects, special, audio, funMode, multiplier, celebration, onChange: render });
+engine = new GameEngine({ runner, effects, special, audio, funMode, multiplier, celebration, director, onChange: render });
 engine.onInsufficient = () => {
   creditEl.parentElement.classList.add('credit-warning');
   setTimeout(() => creditEl.parentElement.classList.remove('credit-warning'), 700);
@@ -145,6 +147,9 @@ document.querySelectorAll('[data-highlow]').forEach(button => button.addEventLis
   engine.highLow(button.dataset.highlow); audio.unlock().catch(() => {});
 }));
 setupDebug(engine);
+const requestedEvent=new URLSearchParams(location.search).get('event');
+const eventMap={'small-three':'SMALL_THREE','big-three':'BIG_THREE','big-four':'BIG_FOUR','double-cannon':'DOUBLE_CANNON','grand-slam':'GRAND_SLAM','train':'TRAIN'};
+if(eventMap[requestedEvent]){engine.forceSpecial(eventMap[requestedEvent]);engine.setAllBets(10);engine.status=`测试入口：${engine.specialName(eventMap[requestedEvent])} · 按 START`;render(engine);}
 document.addEventListener('visibilitychange', () => {
   if (document.hidden && audio.context?.state === 'running') audio.context.suspend();
   else if (!document.hidden && audio.context?.state === 'suspended') audio.context.resume().catch(() => {});

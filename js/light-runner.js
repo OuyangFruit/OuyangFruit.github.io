@@ -1,13 +1,13 @@
 import { EventTimeline } from './event-timeline.js';
 
 export class LightRunner {
-  constructor(cells, tiles, audio, onPhase = () => {}, scale = 1) {
+  constructor(cells, tiles, audio, onPhase = () => {}, scale = 1, timeline = null) {
     this.cells = cells;
     this.tiles = tiles;
     this.audio = audio;
     this.onPhase = onPhase;
     this.scale = scale;
-    this.timeline = new EventTimeline(scale);
+    this.timeline = timeline || new EventTimeline(scale);
     this.index = 0;
     this.phase = 'IDLE';
     this.active = false;
@@ -31,7 +31,7 @@ export class LightRunner {
     if (!this.cells[target]) throw new Error(`Invalid lamp ${target}`);
     this.active = true;
     try {
-      const rounds = loops ?? (special ? 2 : 2 + Math.floor(Math.random() * 2));
+      const rounds = loops ?? (special ? 1 : 2);
       const travel = (target - this.index + this.cells.length) % this.cells.length;
       const steps = rounds * this.cells.length + travel;
       const finalSteps = Math.min(special ? 5 : 7, steps);
@@ -41,20 +41,21 @@ export class LightRunner {
         let speed;
         if (left <= finalSteps) {
           this.setPhase('SLOW_DOWN');
-          const sequence = special ? [70, 85, 110, 140, 180] : [85, 100, 125, 155, 190, 235, 290];
+          const sequence = special ? [75, 95, 125, 165, 225] : [95, 115, 145, 185, 235, 300, 390];
           speed = sequence[finalSteps - left];
         } else if (step < rampSteps) {
           this.setPhase('SPIN_START');
-          speed = 82 - step * 4;
+          speed = 145 - step * 9;
         } else {
           this.setPhase('SPINNING');
-          speed = special ? 30 : 42 + Math.random() * 18;
+          speed = special ? 34 : 48 + Math.random() * 10;
         }
         await this.timeline.cue(speed * tempo * (.9 + Math.random() * .2),
           () => this.show(this.index + 1), () => this.audio.tick(this.phase, speed, left));
       }
       this.show(target, false);
       this.setPhase('NORMAL_STOP');
+      this.audio.stopLoop();
       this.audio.stop();
       return this.cells[target];
     } finally { this.active = false; }
@@ -63,7 +64,7 @@ export class LightRunner {
   async moveTrain(start, count, direction, onCarriage) {
     this.setPhase('SPECIAL_RUNNING');
     for (let step = 0; step < count; step++) {
-      const speed = Math.max(54, 145 - step * 8);
+      const tail=Math.max(0,count-step-7); const speed=step<8?Math.max(38,145-step*14):tail?38:70+(7-tail)*35;
       const index = (start + direction * step + this.cells.length * 10) % this.cells.length;
       await this.timeline.cue(speed, () => this.show(index, true, true, direction), () => this.audio.trainStep(step, speed));
       if (onCarriage) await onCarriage(index, step);

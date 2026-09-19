@@ -1,113 +1,21 @@
 import { BOARD_CELLS, indicesFor, pickIndex } from './board-model.js';
-
-const TYPES = Object.freeze({
-  SMALL_THREE: '小三元', BIG_THREE: '大三元', BIG_FOUR: '大四喜',
-  DOUBLE_CANNON: '双响炮', TRAIN: '开火车', GRAND_SLAM: '大满贯'
-});
-// Presentation plans contain no outcome selection or payout rules.
-export const PRESENTATIONS = Object.freeze({
-  SMALL_THREE: {audioSequence:'rising-three',lightSequence:'three-symbols',animationSequence:'center',duration:180,payoutSequence:'three-hits'},
-  BIG_THREE: {audioSequence:'bass-three',lightSequence:'three-symbols-and-board',animationSequence:'center',duration:200,payoutSequence:'three-hits'},
-  BIG_FOUR: {audioSequence:'four-directions',lightSequence:'four-apple-lamps',animationSequence:'cabinet',duration:200,payoutSequence:'four-hits'},
-  DOUBLE_CANNON: {audioSequence:'two-impacts',lightSequence:'two-bursts',animationSequence:'pause-and-burst',duration:210,payoutSequence:'two-hits'},
-  TRAIN: {audioSequence:'chug-chug',lightSequence:'24-lamp-chase',animationSequence:'train-trail',duration:220,payoutSequence:'carriages'},
-  GRAND_SLAM: {audioSequence:'full-fanfare',lightSequence:'all-lamps',animationSequence:'all-displays',duration:250,payoutSequence:'eight-hits'}
-});
-
+const TYPES=Object.freeze({SMALL_THREE:'小三元',BIG_THREE:'大三元',BIG_FOUR:'大四喜',DOUBLE_CANNON:'双响炮',TRAIN:'开火车',GRAND_SLAM:'大满贯'});
+export const PRESENTATIONS=Object.freeze({SMALL_THREE:{lightSequence:'three-step',fallback:6},BIG_THREE:{lightSequence:'three-board-burst',fallback:7},BIG_FOUR:{lightSequence:'four-direction-jackpot',fallback:9},DOUBLE_CANNON:{lightSequence:'double-impact',fallback:7},TRAIN:{lightSequence:'accelerating-train',fallback:8},GRAND_SLAM:{lightSequence:'full-board-storm',fallback:10}});
 export class SpecialEventEngine {
-  constructor(runner, effects, audio) {
-    this.runner = runner; this.effects = effects; this.audio = audio;
-    this.handlers = {
-      SMALL_THREE: ctx => this.smallThree(ctx),
-      BIG_THREE: ctx => this.bigThree(ctx),
-      BIG_FOUR: ctx => this.bigFour(ctx),
-      DOUBLE_CANNON: ctx => this.doubleCannon(ctx),
-      TRAIN: ctx => this.train(ctx),
-      GRAND_SLAM: ctx => this.grandSlam(ctx)
-    };
-    this.presentations = PRESENTATIONS;
+  constructor(runner,effects,audio,lights=null){this.runner=runner;this.effects=effects;this.audio=audio;this.lights=lights;this.presentations=PRESENTATIONS;}
+  async run(type,ctx){
+    if(!PRESENTATIONS[type])throw new Error(`Unknown special event ${type}`);
+    const seconds=this.audio.specialDuration(type,PRESENTATIONS[type].fallback),total=seconds*1000;
+    ctx.state('SPECIAL_INTRO',`${TYPES[type]} · 触发`);this.audio.stopLoop();this.audio.fadeOutMusic(250);this.effects.centerFlash(type);this.audio.warning();await this.effects.wait(total*.05);
+    const track=this.audio.specialTrack(type);this.audio.playMusic(track,type==='SMALL_THREE'?.46:.58);ctx.state('SPECIAL_RUNNING',`${TYPES[type]} · 演出中`);
+    try{await this[type.toLowerCase().replace('_','')](ctx,total);}finally{this.effects.restore();}
+    return {duration:total,track};
   }
-  async run(type, ctx) {
-    if (!this.handlers[type]) throw new Error(`Unknown special event ${type}`);
-    ctx.state('SPECIAL_INTRO', `${TYPES[type]} · 准备开始`);
-    await this.effects.timeline.cue(this.presentations[type].duration,
-      () => this.effects.centerFlash(type), () => {
-        this.audio.warning();
-        if (!this.audio.specialEvent(type)) this.audio.specialCue(type);
-      });
-    try { await this.handlers[type](ctx); }
-    finally { this.audio.endSpecialEvent(); this.effects.restore(); }
-  }
-  async hit(symbol, ctx, step, { index = pickIndex(symbol), power = 1, loops = 1, countDuration, tempo = 1, flashes } = {}) {
-    ctx.state('SPECIAL_RUNNING', `${TYPES[ctx.event]} · 第 ${step} 次跑灯`);
-    await this.runner.spinTo(index, { loops, special: true, tempo });
-    this.audio.specialCue(ctx.event, step - 1);
-    await this.effects.flashCell(index, flashes ?? 1 + Math.min(2, power), power);
-    this.effects.betWindowFlash(symbol);
-    this.audio.prize(symbol, BOARD_CELLS[index].multiplier >= 50 ? 'jackpot' : power >= 2 ? 'big' : 'small');
-    await ctx.settle(BOARD_CELLS[index], { special: true, countDuration });
-    return index;
-  }
-  async smallThree(ctx) {
-    for (const [i, symbol] of ['BELL','GRAPE','ORANGE'].entries()) {
-      await this.hit(symbol, ctx, i + 1, { power: i + 1 });
-    }
-    this.audio.chime(3); await this.effects.allFlash(1);
-    await this.effects.flashSymbol('ORANGE', 3);
-  }
-  async bigThree(ctx) {
-    for (const [i, symbol] of ['SEVEN','STAR','WATERMELON'].entries()) {
-      await this.hit(symbol, ctx, i + 1, { power: 2 + i });
-    }
-    const indices = ['SEVEN','STAR','WATERMELON'].flatMap(indicesFor);
-    this.effects.show(indices); this.audio.fanfare(); await this.effects.wait(500);
-  }
-  async bigFour(ctx) {
-    const apples = indicesFor('APPLE');
-    for (const [i, index] of apples.entries()) {
-      await this.hit('APPLE', ctx, i + 1, { index, power: Math.min(3, 1 + i), loops: 1,
-        tempo: .7, flashes: i < 2 ? 1 : 2, countDuration: 220 });
-      if (i === 2) this.effects.cabinet.classList.add('cabinet-flash');
-    }
-    await this.effects.allFlash(2); this.effects.cabinet.classList.remove('cabinet-flash');
-  }
-  async doubleCannon(ctx) {
-    const choices = ['APPLE','ORANGE','BELL','WATERMELON','SEVEN','BAR'];
-    const first = choices[Math.floor(Math.random() * choices.length)];
-    const second = choices[(choices.indexOf(first) + 2 + Math.floor(Math.random() * 3)) % choices.length];
-    await this.hit(first, ctx, 1, { power: 2 });
-    await this.effects.wait(380);
-    await this.hit(second, ctx, 2, { power: 3 });
-    this.audio.boom(2); await this.effects.allFlash(2);
-  }
-  async train(ctx) {
-    const direction = Math.random() < .5 ? 1 : -1;
-    const carriages = 4 + Math.floor(Math.random() * 4);
-    const start = Math.floor(Math.random() * BOARD_CELLS.length);
-    this.audio.specialCue('TRAIN');
-    await this.runner.spinTo(start, { loops: 1, special: true });
-    await this.runner.moveTrain(start, carriages + 24, direction, async (index, step) => {
-      if (step < 24 || step >= 24 + carriages) return;
-      const cell = BOARD_CELLS[index];
-      this.effects.betWindowFlash(cell.symbol);
-      this.audio.specialCue('TRAIN', step);
-      this.audio.hit(1);
-      await ctx.settle(cell, { special: true, countDuration: 180 });
-    });
-    this.audio.brake(); await this.effects.wait(700);
-    this.audio.boom(3); await this.effects.chaseClockwise(1); await this.effects.allFlash(1);
-  }
-  async grandSlam(ctx) {
-    this.effects.show([]);
-    await this.effects.wait(250);
-    this.audio.boom(3); this.audio.fanfare();
-    for (const [i, symbol] of ['APPLE','ORANGE','GRAPE','BELL','WATERMELON','STAR','SEVEN','BAR'].entries()) {
-      await this.hit(symbol, ctx, i + 1, { power: i < 4 ? 2 : 3, loops: i === 0 ? 2 : 1,
-        countDuration: 180, tempo: .55, flashes: 1 });
-      this.effects.holdBetWindow(symbol);
-    }
-    await this.effects.chaseClockwise(3, 25);
-    await this.effects.allFlash(3);
-    this.audio.fanfare(); this.audio.boom(3);
-  }
+  async settleSymbol(symbol,ctx,power=1,index=pickIndex(symbol)){this.runner.show(index,false);this.effects.betWindowFlash(symbol);this.audio.specialCue(ctx.event,power-1);await this.effects.flashCell(index,power>=3?3:2,power);await ctx.settle(BOARD_CELLS[index],{special:true,countDuration:220});return index;}
+  async smallthree(ctx,total){const marks=[];for(const [i,s] of ['BELL','GRAPE','ORANGE'].entries()){await this.effects.wait(total*.07);marks.push(await this.settleSymbol(s,ctx,i+1));}this.effects.show(marks);await this.effects.wait(total*.12);await this.effects.allFlash(2);await this.effects.wait(total*.12);}
+  async bigthree(ctx,total){const marks=[];for(const [i,s] of ['SEVEN','STAR','WATERMELON'].entries()){await this.effects.wait(total*.055);marks.push(await this.settleSymbol(s,ctx,2+i));}await this.effects.chaseClockwise(1,32);await this.effects.allFlash(2);await this.effects.flashSymbol('WATERMELON',2);this.audio.fanfare();await this.effects.wait(total*.08);}
+  async bigfour(ctx,total){this.effects.show([]);await this.effects.wait(total*.06);const marks=[];for(const [i,index] of indicesFor('APPLE').entries()){this.audio.specialCue('BIG_FOUR',i);marks.push(await this.settleSymbol('APPLE',ctx,Math.min(3,i+1),index));await this.effects.wait(total*.035);}this.effects.show(marks);this.effects.cabinet.classList.add('screen-shake');await this.effects.allFlash(3);await this.effects.chaseClockwise(1,28);await this.effects.allFlash(2);this.effects.cabinet.classList.remove('screen-shake');await this.effects.wait(total*.08);}
+  async doublecannon(ctx,total){const choices=['APPLE','ORANGE','BELL','WATERMELON','SEVEN','BAR'],a=choices[Math.floor(Math.random()*choices.length)],b=choices[(choices.indexOf(a)+3)%choices.length];const first=await this.settleSymbol(a,ctx,2);this.audio.boom(2);await this.effects.wait(total*.07);const second=await this.settleSymbol(b,ctx,3);this.audio.boom(3);await this.effects.wait(total*.05);this.effects.show([first,second]);await this.effects.allFlash(3);await this.effects.wait(total*.12);}
+  async train(ctx,total){const direction=Math.random()<.5?1:-1,start=Math.floor(Math.random()*24);await this.runner.moveTrain(start,72,direction);this.audio.brake();await this.effects.wait(total*.05);let target=(start+direction*72+240)%24;while(!BOARD_CELLS[target].betType)target=(target+direction+24)%24;await this.settleSymbol(BOARD_CELLS[target].symbol,ctx,3,target);this.audio.boom(3);await this.effects.allFlash(2);}
+  async grandslam(ctx,total){const all=[];for(let i=0;i<24;i++){all.push(i);this.effects.show(all);if(i%3===0)this.audio.specialCue('GRAND_SLAM',i);await this.effects.wait(total*.012);}await this.effects.chaseClockwise(1,25);await this.effects.chaseCounterClockwise(1);await this.effects.allFlash(3);this.effects.cabinet.classList.add('screen-shake');for(const s of ['APPLE','ORANGE','GRAPE','BELL','WATERMELON','STAR','SEVEN','BAR']){this.effects.holdBetWindow(s);await ctx.settle(BOARD_CELLS[pickIndex(s)],{special:true,countDuration:120});}this.audio.fanfare();this.audio.boom(3);await this.effects.allFlash(3);this.effects.cabinet.classList.remove('screen-shake');await this.effects.wait(total*.06);}
 }
