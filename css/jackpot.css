@@ -1,0 +1,82 @@
+/* Arcade celebration layer: banner, pooled sparks, LED feedback.
+   Everything animates transform/opacity only, so iPhone Safari stays smooth. */
+
+/* The cabinet has to be a positioning context, otherwise overlay flashes escape
+   to the viewport and wash out the whole page instead of the playfield. */
+.machine { position: relative; }
+
+.jackpot-banner {
+  position: absolute; left: 50%; top: 37%; z-index: 9; pointer-events: none;
+  opacity: 0; transform: translate(-50%,-50%) scale(.6); white-space: nowrap;
+  font: 900 clamp(22px,5.6vw,56px)/1 Arial,"Microsoft YaHei",sans-serif;
+  letter-spacing: .06em; font-style: italic;
+  color: #fff3ae;
+  text-shadow: 0 0 5px #fff, 0 0 15px #ffb437, 0 0 32px #ff3c12, 0 4px 0 #8b1226;
+}
+.jackpot-banner[data-kind="event"] { font-size: clamp(18px,4.4vw,42px); letter-spacing: .12em; }
+.jackpot-banner[data-kind="win"] { font-size: clamp(16px,3.6vw,34px); color: #d8f3ff; text-shadow: 0 0 5px #fff, 0 0 14px #4fc4ff, 0 3px 0 #123c62; }
+.jackpot-banner.banner-show { animation: banner-pop 2.35s cubic-bezier(.16,.9,.2,1) forwards; }
+@keyframes banner-pop {
+  0% { opacity: 0; transform: translate(-50%,-50%) scale(.45) rotate(-5deg); }
+  12% { opacity: 1; transform: translate(-50%,-50%) scale(1.26) rotate(2deg); }
+  26% { transform: translate(-50%,-50%) scale(1) rotate(0); }
+  80% { opacity: 1; }
+  100% { opacity: 0; transform: translate(-50%,-58%) scale(1.08); }
+}
+
+.celebration-layer i.spark {
+  position: absolute; left: 50%; top: 48%; width: 8px; height: 18px;
+  opacity: 0; border-radius: 2px; animation: none;
+  background: hsl(var(--c,40) 95% 58%);
+  box-shadow: 0 0 7px currentColor;
+  will-change: transform,opacity;
+}
+.celebration-layer i.spark.spark-fly { animation: spark-flight 1.6s ease-out forwards; }
+@keyframes spark-flight {
+  0% { opacity: 1; transform: translate(-50%,-50%) scale(.2) rotate(0); }
+  100% { opacity: 0; transform: translate(var(--x,0),55vh) rotate(var(--r,0deg)); }
+}
+
+/* Centre multiplier: armed, rolling, revealed. */
+.feature-led.multiplier-armed { color: #ffd27a; opacity: .55; text-shadow: 0 0 4px #ffae3f; }
+.feature-led.multiplier-rolling { animation: multiplier-flicker .11s steps(2) infinite; }
+@keyframes multiplier-flicker { 50% { filter: brightness(1.55) } }
+.feature-led[data-tier="jackpot"].multiplier-reveal { animation-duration: 1.85s; }
+.feature-led[data-tier="high"].multiplier-reveal,
+.feature-led[data-tier="big"].multiplier-reveal { animation-duration: 1.6s; }
+
+/* Whole-panel blackout used before a jackpot build-up. Only opacity changes. */
+.board,.center-feature-photo { transition: opacity .16s linear, filter .16s linear; }
+.machine.board-dim .board { opacity: .12; }
+.machine.board-dim .center-feature-photo { opacity: .3; }
+.machine.board-dim .feature-led { opacity: 1; filter: brightness(1.5); }
+
+/* LED feedback while WIN is counting up. */
+.machine.win-counting .win-box { animation: led-flicker .17s steps(2) infinite; }
+.machine.win-counting[data-count-level="JACKPOT"] .win-box,
+.machine.win-counting[data-count-level="HIGH_MULTIPLIER"] .win-box { animation-duration: .12s; }
+@keyframes led-flicker { 50% { filter: brightness(1.55) } }
+.machine[data-win-level="JACKPOT"] .win-box strong,
+.machine[data-win-level="HIGH_MULTIPLIER"] .win-box strong { animation: win-grow .62s cubic-bezier(.2,.9,.2,1) 2 alternate; }
+@keyframes win-grow { from { transform: scale(1) } to { transform: scale(1.13) } }
+
+/* Power glow: 1 = build-up, 2 = strong, 3 = finale. */
+.machine[data-power="2"] .playfield { box-shadow: inset 0 0 0 2px #ffe49c, 0 0 18px #ffb63f, 0 3px 6px #35142b; }
+.machine[data-power="3"] .playfield { box-shadow: inset 0 0 0 3px #fff2c6, 0 0 30px 6px #ffa52e, 0 3px 8px #35142b; }
+.machine[data-power="2"] .control-deck,
+.machine[data-power="3"] .control-deck { filter: brightness(1.12); }
+
+/* Special event spotlight on the centre feature board. */
+.machine.special-active .feature-led { box-shadow: 0 0 0 3px #2f7192, inset 0 0 7px #170e19, 0 0 14px 4px #ffb43c; }
+.feature-led[data-event]::before {
+  content: attr(data-event); position: absolute; left: 50%; top: -1.35em; transform: translateX(-50%);
+  white-space: nowrap; font: 900 clamp(9px,1.5vw,15px)/1 Arial,"Microsoft YaHei",sans-serif; letter-spacing: .1em;
+  color: #ffe9a8; text-shadow: 0 1px 2px #5a0f1f, 0 0 8px #ff9a2c;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .celebration-layer i.spark.spark-fly { animation-duration: .7s; }
+  .jackpot-banner.banner-show { animation-duration: 1.2s; }
+  .machine.win-counting .win-box,
+  .machine[data-win-level] .win-box strong { animation: none; }
+}

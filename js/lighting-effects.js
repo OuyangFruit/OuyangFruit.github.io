@@ -18,12 +18,35 @@ export class LightingEffects {
       tile.classList.remove('trail-1', 'trail-2', 'train-trail');
     });
   }
+  // Distance ring used by the spread / focus effects.
+  ring(target, distance) {
+    const length = this.tiles.length;
+    return this.show([(target + distance) % length, (target - distance + length) % length]);
+  }
+  only(index) { this.show([index]); }
+  blackout() {
+    this.tiles.forEach(tile => tile.classList.remove('lit', 'trail-1', 'trail-2', 'train-trail', 'final'));
+  }
+  dim(on) { this.cabinet.classList.toggle('board-dim', Boolean(on)); }
+  setPower(power = 0) {
+    if (power) this.cabinet.dataset.power = String(power);
+    else delete this.cabinet.dataset.power;
+  }
+  // Walk an explicit lamp order once. Used for wave sweeps.
+  async cascade(order, speed = 34, { tick = true } = {}) {
+    for (const index of order) {
+      await this.timeline.cue(speed, () => this.show([index]), tick ? () => this.audio.tick('SPINNING', speed) : null);
+    }
+  }
   centerFlash(event) {
     this.cabinet.dataset.special = event || '';
     this.cabinet.classList.toggle('special-active', Boolean(event));
     const names = {SMALL_THREE:'小三元',BIG_THREE:'大三元',BIG_FOUR:'大四喜',
       DOUBLE_CANNON:'双响炮',TRAIN:'开火车',GRAND_SLAM:'大满贯'};
-    this.featureValue.textContent = names[event] || '32';
+    // The centre element is owned by MultiplierController, so the event name is
+    // published as data instead of overwriting the live multiplier readout.
+    if (event) this.featureValue.dataset.event = names[event] || event;
+    else delete this.featureValue.dataset.event;
     this.featureValue.classList.toggle('special-display', Boolean(event));
     this.featureValue.setAttribute('aria-label', event ? `${names[event]} 中央功能灯` : '中央功能盘数值');
   }
@@ -63,6 +86,6 @@ export class LightingEffects {
   }
   async jackpotCelebration() { this.audio.boom(3); await this.allFlash(3); await this.chaseClockwise(1); }
   restore(index = this.runner.index) {
-    this.centerFlash(''); this.clearBetWindows(); this.runner.show(index, false);
+    this.setPower(0); this.dim(false); this.centerFlash(''); this.clearBetWindows(); this.runner.show(index, false);
   }
 }

@@ -10,17 +10,22 @@ import { setupDebug } from './debug.js';
 import { renderSevenSegment } from './led-display.js';
 import { FunModeController } from './FunModeController.js';
 import { MultiplierController } from './MultiplierController.js';
-import { LightShowEngine } from './LightShowEngine.js';
 import { WinCelebrationController } from './WinCelebrationController.js';
+import { JackpotLightingSystem } from './jackpot-lighting.js';
+import { GameEventBus } from './game-events.js';
 
 const $ = id => document.getElementById(id);
 const machine = document.querySelector('.machine');
 const board = $('board'), betStrip = $('bet-strip'), betKeys = $('bet-keys');
 const creditEl = $('credit'), winEl = $('win'), statusEl = $('status'), resultEl = $('result');
 const startButton = $('start'), clearButton = $('clear'), rebetButton = $('rebet'), soundButton = $('sound');
+winEl.parentElement.classList.add('win-box');
+creditEl.parentElement.classList.add('credit-box');
 const debugMode = new URLSearchParams(location.search).get('debug') === '1';
 const scale = debugMode && new URLSearchParams(location.search).get('test') === '1' ? .02 : 1;
 const audio = new AudioEngine();
+const bus = new GameEventBus();
+audio.bind(bus);
 const PRINT_LABELS = [
   '10–20','10–20','×60','×120','×30','5–6','10–20',
   '20–40','×3','','5–6','×3',
@@ -39,23 +44,24 @@ const cells = BOARD_CELLS.map(cell => {
   tile.style.gridColumn = coordinates[cell.index][0];
   tile.style.gridRow = coordinates[cell.index][1];
   tile.style.setProperty('--symbol-url', `url('../assets/images/symbols/${cell.symbol.toLowerCase()}.png')`);
+  tile.style.setProperty('--tile-index', String(cell.index));
   tile.innerHTML = `<span class="tile-art" aria-hidden="true"></span><span class="tile-print">${PRINT_LABELS[cell.index]}</span>`;
   tile.setAttribute('aria-label', `${cell.index + 1} ${PRIZES[cell.symbol].label}`);
   board.append(tile);
   return { ...cell, element: tile };
 });
 const tiles = cells.map(cell => cell.element);
-const phaseLabels = {SPIN_START:'启动加速',SPINNING:'高速运行',SLOW_DOWN:'逐格减速'};
+const phaseLabels = {SPIN_START:'启动加速',SPINNING:'高速运行',SLOW_DOWN:'逐格减速',SUSPENSE:'即将开奖'};
 let engine;
 const runner = new LightRunner(cells, tiles, audio, phase => {
   if (engine && phaseLabels[phase]) engine.state(phase, phaseLabels[phase]);
-}, scale);
+}, scale, bus);
 const effects = new LightingEffects(tiles, machine, runner, audio, scale);
 const special = new SpecialEventEngine(runner, effects, audio);
 const funMode = new FunModeController({ enabled: true });
-const multiplier = new MultiplierController($('feature-value'), audio, scale);
-const lightShows = new LightShowEngine(effects);
-const celebration = new WinCelebrationController(machine, effects, lightShows, audio, scale);
+const multiplier = new MultiplierController($('feature-value'), audio, scale, bus);
+const lighting = new JackpotLightingSystem(effects, { bus, scale });
+const celebration = new WinCelebrationController(machine, effects, lighting, audio, scale, bus);
 
 const lanes = new Map(), buttons = new Map();
 for (const channel of BET_CHANNELS) {
@@ -93,7 +99,7 @@ function render(game) {
     button.disabled = game.busy;
   }
 }
-engine = new GameEngine({ runner, effects, special, audio, funMode, multiplier, celebration, onChange: render });
+engine = new GameEngine({ runner, effects, special, audio, funMode, multiplier, celebration, lighting, bus, onChange: render });
 engine.onInsufficient = () => {
   creditEl.parentElement.classList.add('credit-warning');
   setTimeout(() => creditEl.parentElement.classList.remove('credit-warning'), 700);
@@ -106,12 +112,13 @@ for (const [key, button] of buttons) {
     clearTimeout(holdTimer); clearInterval(repeatTimer);
     holdTimer = null; repeatTimer = null; pointerActive = false;
   };
-  button.addEventListener('pointerdown', async event => {
+  button.addEventListener('pointerdown', event => {
     if (button.disabled) return;
     if (event.pointerType !== 'mouse') event.preventDefault();
     pointerActive = true;
-    await audio.unlock().catch(() => {});
-    if (!pointerActive) return;
+    // Betting must never wait for the AudioContext. Decoding the sample bank can
+    // take seconds on a cold phone and used to swallow the player's first tap.
+    audio.unlock().catch(() => {});
     const changed = engine.placeBet(key, 1);
     if (!changed) { button.classList.add('at-limit'); setTimeout(() => button.classList.remove('at-limit'), 160); }
     holdTimer = setTimeout(() => {
@@ -125,7 +132,9 @@ for (const [key, button] of buttons) {
     }, 480);
   });
   for (const event of ['pointerup','pointercancel','pointerleave']) button.addEventListener(event, release);
-  button.addEventListener('click', event => { if (event.detail === 0 && !pointerActive) { audio.unlock().then(() => engine.placeBet(key, 1)).catch(() => engine.placeBet(key, 1)); } });
+  button.addEventListener('click', event => {
+    if (event.detail === 0 && !pointerActive) { audio.unlock().catch(() => {}); engine.placeBet(key, 1); }
+  });
   button.addEventListener('contextmenu', event => event.preventDefault());
   window.addEventListener('blur', release);
 }
@@ -133,9 +142,9 @@ for (const [key, button] of buttons) {
 startButton.addEventListener('click', () => engine.start());
 clearButton.addEventListener('click', () => { engine.clear(); resultEl.textContent = ''; });
 rebetButton.addEventListener('click', () => engine.rebet());
-soundButton.addEventListener('click', async () => {
-  await audio.unlock().catch(() => {});
+soundButton.addEventListener('click', () => {
   audio.setEnabled(!audio.enabled);
+  audio.unlock().catch(() => {});
   soundButton.innerHTML = `声音 <small>${audio.enabled ? 'ON' : 'OFF'}</small>`;
   soundButton.setAttribute('aria-pressed', String(audio.enabled));
 });
@@ -145,6 +154,7 @@ document.querySelectorAll('[data-highlow]').forEach(button => button.addEventLis
   engine.highLow(button.dataset.highlow); audio.unlock().catch(() => {});
 }));
 setupDebug(engine);
+if (debugMode) window.__fruitDebug = { engine, bus, lighting, multiplier, funMode, effects };
 document.addEventListener('visibilitychange', () => {
   if (document.hidden && audio.context?.state === 'running') audio.context.suspend();
   else if (!document.hidden && audio.context?.state === 'suspended') audio.context.resume().catch(() => {});

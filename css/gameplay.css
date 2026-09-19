@@ -10,12 +10,10 @@
 .feature-led.multiplier-reveal::after{content:attr(data-label);position:absolute;left:50%;top:112%;transform:translateX(-50%);white-space:nowrap;font:900 clamp(8px,1.4vw,17px)/1 sans-serif;color:#fff0a0;text-shadow:0 1px 2px #500,0 0 8px #ff4d00}
 @keyframes multiplier-reveal{0%{transform:translate(-50%,-50%) scale(.35);filter:brightness(3)}22%{transform:translate(-50%,-50%) scale(1.9) rotate(-3deg)}42%{transform:translate(-50%,-50%) scale(1.45) rotate(2deg)}100%{transform:translate(-50%,-50%) scale(1)}}
 .celebration-layer{position:fixed;inset:0;z-index:30;pointer-events:none;overflow:hidden}
-.celebration-layer i{position:absolute;left:50%;top:48%;width:8px;height:18px;background:hsl(var(--c) 95% 58%);border-radius:2px;box-shadow:0 0 7px currentColor;animation:confetti-flight 1.7s ease-out forwards}
-@keyframes confetti-flight{0%{transform:translate(-50%,-50%) scale(.2);opacity:1}100%{transform:translate(var(--x),55vh) rotate(var(--r));opacity:0}}
 .machine.screen-shake{animation:screen-shake .45s steps(2)}
 @keyframes screen-shake{0%,100%{transform:translate(0)}20%{transform:translate(-3px,2px)}40%{transform:translate(3px,-2px)}60%{transform:translate(-2px,-1px)}80%{transform:translate(2px,2px)}}
-.machine[data-win-level="JACKPOT"]::after,.machine[data-win-level="SPECIAL_EVENT"]::after{content:"";position:absolute;inset:0;z-index:25;pointer-events:none;background:#fff;mix-blend-mode:screen;animation:win-overlay .7s ease-out forwards}
-@keyframes win-overlay{0%{opacity:.9}30%{opacity:.08}45%{opacity:.65}100%{opacity:0}}
+.machine[data-win-level="JACKPOT"] .playfield::after,.machine[data-win-level="SPECIAL_EVENT"] .playfield::after{content:"";position:absolute;inset:0;z-index:8;pointer-events:none;background:#fff;mix-blend-mode:screen;animation:win-overlay .68s ease-out forwards}
+@keyframes win-overlay{0%{opacity:.62}30%{opacity:.05}45%{opacity:.38}100%{opacity:0}}
 @media(prefers-reduced-motion:reduce){.celebration-layer i{animation-duration:.8s}.machine.screen-shake{animation:none}}
 .score-box strong.wide .digit{--dw:clamp(9px,1.12vw,18px)}
 .special-spots{position:absolute;inset:0;z-index:2;pointer-events:none}
@@ -27,7 +25,7 @@
 .special-spots [data-event="BIG_FOUR"]{left:57%;top:62%}
 .special-spots [data-event="GRAND_SLAM"]{left:53%;top:46%}
 .machine.special-active .center-feature-photo{filter:brightness(.73) saturate(1.1)}
-.feature-led.special-display{font-size:clamp(14px,2.2vw,26px);color:#ffe16d;text-shadow:0 0 7px #ffb43c,0 0 15px #ed5729;animation:special-breath .42s infinite alternate}
+.feature-led.special-display{color:#ffe16d;text-shadow:0 0 7px #ffb43c,0 0 15px #ed5729;animation:special-breath .42s infinite alternate}
 .machine.special-active .special-spots i{opacity:.22;box-shadow:0 0 10px #40100f,inset 0 0 10px #220909}
 .machine[data-special="SMALL_THREE"] [data-event="SMALL_THREE"],
 .machine[data-special="BIG_THREE"] [data-event="BIG_THREE"],

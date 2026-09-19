@@ -1,6 +1,7 @@
 import { SynthEffects } from './SynthEffects.js';
 import { SampleManager } from './SampleManager.js';
 import { AUDIO_ASSETS, LIBRARY_SAMPLES } from './AudioAssetMap.js';
+import { GAME_EVENTS as E } from '../game-events.js';
 
 const NATIVE_SAMPLES = Object.freeze({
   start: './assets/audio/native/arcade-start.mp3',
@@ -57,13 +58,52 @@ export class AudioEngine {
         this.musicSamples.preload(LIBRARY_SAMPLES)
       ]);
     }
-    if (this.context.state === 'suspended') await this.context.resume();
-    await this.sampleReady;
+    // Both waits are bounded: a slow phone decode can delay the first sound but
+    // must never delay a lamp, a bet or a spin.
+    if (this.context.state === 'suspended') {
+      await Promise.race([this.context.resume().catch(() => {}), this.delay(600)]);
+    }
+    await Promise.race([this.sampleReady, this.delay(1200)]).catch(() => {});
   }
+  delay(ms) { return new Promise(resolve => setTimeout(resolve, ms)); }
   setEnabled(enabled) {
     this.enabled = enabled;
     try { localStorage.setItem('ouyangfruit.sound', enabled ? 'on' : 'off'); } catch { /* storage may be restricted */ }
     if (this.context) this.masterGain.gain.setTargetAtTime(enabled ? .48 : 0, this.context.currentTime, .025);
+  }
+  // Lights and gameplay never call sounds directly for round structure: the
+  // shared event bus does. Swapping an asset is a one-line change here.
+  bind(bus) {
+    if (!bus || this.bound) return false;
+    this.bound = true;
+    this.bus = bus;
+    bus.on(E.SPIN_START, () => this.startKick());
+    bus.on(E.SPIN_TICK, payload => {
+      if (payload.phase === 'TRAIN') this.trainStep(payload.step ?? 0, payload.speed);
+      else this.tick(payload.phase, payload.speed, payload.remaining ?? Infinity);
+    });
+    bus.on(E.SPIN_STOP, () => this.stop());
+    bus.on(E.MULTIPLIER_ARM, () => this.multiplierArm());
+    bus.on(E.MULTIPLIER_START, () => this.multiplierRoll(true));
+    bus.on(E.MULTIPLIER_TICK, payload => {
+      if (payload.phase === 'roll' || payload.final) this.multiplierTick(Boolean(payload.final));
+    });
+    bus.on(E.MULTIPLIER_REVEAL, payload => {
+      this.multiplierRoll(false);
+      this.multiplierReveal(payload.tier);
+    });
+    bus.on(E.FRUIT_HIT, payload => { if (payload.tier && payload.tier !== 'none') this.prize(payload.symbol, payload.tier); });
+    bus.on(E.WIN_COUNT, payload => this.count(payload?.step, payload?.steps));
+    bus.on(E.JACKPOT_START, payload => this.jackpotStart(payload));
+    bus.on(E.JACKPOT_PHASE1, () => this.boom(3));
+    bus.on(E.JACKPOT_PHASE2, () => this.boom(2));
+    bus.on(E.JACKPOT_FINALE, () => this.fanfare());
+    bus.on(E.JACKPOT_END, () => this.endSpecialEvent());
+    bus.on(E.SURPRISE_BONUS, () => this.surprise());
+    bus.on(E.HIGHLOW_WIN, () => this.playWinMusic('MEDIUM_WIN'));
+    bus.on(E.HIGHLOW_LOSE, () => this.playHighLowLoss());
+    bus.on(E.ROUND_END, payload => { if (payload.outcome === 'lose') this.playRandomRoundMusic(); });
+    return true;
   }
   sound(method, ...args) { if (this.enabled && this.synth) this.synth[method](...args); }
   routed(bus, method, ...args) { if (this.enabled && this[bus]) this[bus][method](...args); }
@@ -91,18 +131,56 @@ export class AudioEngine {
     if (!active) return this.samples?.stop('multiplier-roll');
     return this.sample(AUDIO_ASSETS.multiplierRoll, { volume:.22, group:'multiplier-roll', replace:true });
   }
-  multiplierReveal() { return this.sample(AUDIO_ASSETS.multiplierReveal, { volume:.42, group:'reveal', replace:true }); }
+  multiplierArm() { this.routed('jackpot', 'note', 620, .16, .075, 'triangle', 0, 900); }
+  // One short click per lamp change while the multiplier is rolling. Rate limited
+  // so a fast roll never floods the audio graph on a phone.
+  multiplierTick(final = false) {
+    const now = this.context?.currentTime ?? 0;
+    if (now && now - (this.lastMultiplierTick ?? -1) < .038) return false;
+    this.lastMultiplierTick = now;
+    this.routed('jackpot', 'note', final ? 1320 : 880, .045, final ? .11 : .055, 'square', 0, final ? 1760 : 1180);
+    return true;
+  }
+  multiplierReveal(tier = 'small') {
+    const volume = tier === 'jackpot' ? .55 : tier === 'big' || tier === 'high' ? .46 : .4;
+    if (this.sample(AUDIO_ASSETS.multiplierReveal, { volume, group:'reveal', replace:true })) return true;
+    this.routed('jackpot', 'winHit', tier === 'jackpot' ? 3 : 2);
+    return false;
+  }
   startKick() {
     if (!this.sample('start', { volume: .38, group: 'start', replace: true })) this.routed('mechanical', 'startKick');
   }
   tick(phase, speed, remaining = Infinity) {
-    this.routed('mechanical', 'tick', phase === 'SLOW_DOWN', speed);
-    if (remaining <= 5) this.routed('jackpot', 'suspense', 6 - remaining);
+    const slow = phase === 'DECELERATE' || phase === 'SLOW_DOWN';
+    this.routed('mechanical', 'tick', slow, speed);
+    if (phase === 'SUSPENSE') this.routed('jackpot', 'suspense', Math.max(1, 6 - remaining));
+    else if (remaining <= 5) this.routed('jackpot', 'suspense', 6 - remaining);
   }
   stop() { this.routed('mechanical', 'landing'); }
+  // Jackpot sting + level music, fired by jackpot:start from the lamp system.
+  jackpotStart({ level = '', type = '' } = {}) {
+    const sting = { BIG_FOUR: AUDIO_ASSETS.bigFourHits, DOUBLE_CANNON: AUDIO_ASSETS.doubleHit,
+      GRAND_SLAM: AUDIO_ASSETS.jackpotHit }[type] ?? AUDIO_ASSETS.jackpotHit;
+    this.sample(sting, { volume: .46, group: 'event', replace: true });
+    if (type === 'BIG_FOUR') this.music(AUDIO_ASSETS.bigFourMusic, .55);
+    else this.playWinMusic(level);
+    return true;
+  }
+  surprise() {
+    this.sample(AUDIO_ASSETS.credit, { volume: .34, group: 'credit', replace: true });
+    this.routed('jackpot', 'winHit', 3);
+    this.playWinMusic('BIG_WIN');
+  }
   limit() { this.sound('limit'); }
   lowCredit() { this.sound('lowCredit'); }
-  count() { this.sound('count'); }
+  // Long jackpot counts tick many times per second; skip anything faster than 42ms.
+  count() {
+    const now = this.context?.currentTime ?? 0;
+    if (now && now - (this.lastCount ?? -1) < .042) return false;
+    this.lastCount = now;
+    this.sound('count');
+    return true;
+  }
   chime(step) { this.sound('chime', step); }
   warning() { this.sound('warning'); }
   hit(level) { this.routed('jackpot', 'winHit', level); this.routed('synth', 'coin', level); }
