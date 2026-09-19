@@ -14,6 +14,7 @@
   <link rel="stylesheet" href="./css/arcade-presentation.css">
   <link rel="stylesheet" href="./css/jackpot.css">
   <link rel="stylesheet" href="./css/art.css">
+  <link rel="stylesheet" href="./css/betboard.css">
 </head>
 <body>
   <main class="machine" aria-label="经典实体水果机">
@@ -38,7 +39,7 @@
     </section>
     <div class="board-slogan">严禁赌博　仅供娱乐</div>
     <section class="bet-section" aria-label="八路独立下注">
-      <div class="bet-strip" id="bet-strip"></div>
+      <div class="bet-deck" id="bet-deck"></div>
     </section>
     <section class="control-deck" aria-label="实体按键控制区">
       <div class="function-row">
@@ -49,12 +50,10 @@
         <button id="start" class="start-key" type="button">START <small>启动</small></button>
       </div>
       <div class="function-bank" aria-label="预留功能控制区">
-        <button type="button" disabled>上分</button><button type="button" disabled>下分</button>
-        <button type="button" disabled>左移</button><button type="button" disabled>右移</button>
-        <button type="button" disabled>单</button><button type="button" disabled>双</button>
-        <button type="button" data-highlow="big">大</button><button type="button" data-highlow="small">小</button>
+        <button id="collect" class="bank-key collect-key" type="button" disabled>收分 <small>COLLECT</small></button>
+        <button id="odd" class="bank-key" type="button" disabled>单 <small>ODD</small></button>
+        <button id="even" class="bank-key" type="button" disabled>双 <small>EVEN</small></button>
       </div>
-      <div class="bet-keys" id="bet-keys"></div>
       <div class="deck-footer"><span>纯娱乐虚拟积分</span><span>严禁赌博　仅供娱乐</span></div>
     </section>
   </main>

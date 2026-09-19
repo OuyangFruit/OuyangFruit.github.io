@@ -123,14 +123,9 @@ export class AudioEngine {
     });
     bus.on(E.SPIN_STOP, () => { this.motor(false); this.stop(); });
     bus.on(E.MULTIPLIER_ARM, () => this.multiplierArm());
-    bus.on(E.MULTIPLIER_START, () => this.multiplierRoll(true));
-    bus.on(E.MULTIPLIER_TICK, payload => {
-      if (payload.phase === 'roll' || payload.final) this.multiplierTick(Boolean(payload.final));
-    });
-    bus.on(E.MULTIPLIER_REVEAL, payload => {
-      this.multiplierRoll(false);
-      this.multiplierReveal(payload.tier);
-    });
+    bus.on(E.MULTIPLIER_START, () => this.multiplierStart());
+    bus.on(E.MULTIPLIER_TICK, payload => this.multiplierTick(payload));
+    bus.on(E.MULTIPLIER_REVEAL, payload => this.multiplierReveal(payload.tier));
     bus.on(E.FRUIT_HIT, payload => { if (payload.tier && payload.tier !== 'none') this.prize(payload.symbol, payload.tier); });
     bus.on(E.WIN_COUNT, payload => this.count(payload?.step, payload?.steps));
     bus.on(E.JACKPOT_START, payload => this.jackpotStart(payload));
@@ -139,8 +134,13 @@ export class AudioEngine {
     bus.on(E.JACKPOT_FINALE, () => this.fanfare());
     bus.on(E.JACKPOT_END, () => this.endSpecialEvent());
     bus.on(E.SURPRISE_BONUS, () => this.surprise());
-    bus.on(E.HIGHLOW_WIN, () => this.playWinMusic('MEDIUM_WIN'));
-    bus.on(E.HIGHLOW_LOSE, () => this.playHighLowLoss());
+    bus.on(E.WIN_COLLECT, () => this.credit());
+    bus.on(E.ODD_EVEN_START, () => this.oddEvenStart());
+    bus.on(E.ODD_EVEN_WIN, () => this.playWinMusic('MEDIUM_WIN'));
+    bus.on(E.ODD_EVEN_LOSE, () => this.playHighLowLoss());
+    bus.on(E.MYSTERY_START, () => this.mysteryStart());
+    bus.on(E.MYSTERY_RESULT, payload => this.mysteryResult(payload));
+    bus.on(E.FAIRY_START, () => this.fairyStart());
     bus.on(E.ROUND_END, payload => { if (payload.outcome === 'lose') this.playRandomRoundMusic(); });
     return true;
   }
@@ -202,20 +202,47 @@ export class AudioEngine {
     return this.sample(AUDIO_ASSETS.multiplierRoll, { volume:.22, group:'multiplier-roll', replace:true });
   }
   multiplierArm() { this.routed('jackpot', 'note', 620, .16, .075, 'triangle', 0, 900); }
-  // One short click per lamp change while the multiplier is rolling. Rate limited
-  // so a fast roll never floods the audio graph on a phone.
-  multiplierTick(final = false) {
+  // Roll start: a short slice of the real counting clip, never the whole bed.
+  multiplierStart() {
+    this.samples?.stop('multiplier-roll');
+    if (this.sample(AUDIO_ASSETS.multiplierRoll, { volume: .2, group: 'multiplier-open', offset: .02, duration: .28, replace: true })) return true;
+    this.routed('jackpot', 'note', 520, .18, .08, 'triangle', 0, 900);
+    return false;
+  }
+  // Exactly one "哒" per number change. The visual and the sound come from the
+  // same event, so they can never drift apart. Only the fast roll phase is rate
+  // limited, and the pitch drops as the reveal decelerates.
+  multiplierTick({ phase = 'roll', final = false, digit = false } = {}) {
     const now = this.context?.currentTime ?? 0;
-    if (now && now - (this.lastMultiplierTick ?? -1) < .038) return false;
+    const floor = phase === 'roll' ? .036 : .02;
+    if (now && now - (this.lastMultiplierTick ?? -1) < floor) return false;
     this.lastMultiplierTick = now;
-    this.routed('jackpot', 'note', final ? 1320 : 880, .045, final ? .11 : .055, 'square', 0, final ? 1760 : 1180);
+    const slow = phase === 'decelerate' || phase === 'fakeout';
+    const rate = phase === 'jump' ? 1.25 : slow ? .82 : digit ? 1.1 : 1;
+    const volume = phase === 'jump' || final ? .17 : slow ? .13 : .1;
+    if (this.sample(AUDIO_ASSETS.multiplierRoll, { volume, group: 'multiplier-tick', offset: .015, duration: .08, rate })) return true;
+    const frequency = phase === 'jump' ? 1420 : slow ? 760 : digit ? 1180 : 900;
+    this.routed('jackpot', 'note', frequency, .045, volume, 'square', 0, frequency * 1.25);
     return true;
   }
   multiplierReveal(tier = 'small') {
-    const volume = tier === 'jackpot' ? .55 : tier === 'big' || tier === 'high' ? .46 : .4;
-    if (this.sample(AUDIO_ASSETS.multiplierReveal, { volume, group:'reveal', replace:true })) return true;
-    this.routed('jackpot', 'winHit', tier === 'jackpot' ? 3 : 2);
+    this.samples?.stop('multiplier-open');
+    const big = tier === 'jackpot' || tier === 'fairy' || tier === 'high' || tier === 'big';
+    if (big) {
+      // Real 10x+ sting, clipped to its punch rather than the whole 6.5s file.
+      if (this.sample(AUDIO_ASSETS.jackpotHit, { volume:.5, group:'reveal', offset:0, duration:2.6, replace:true })) return true;
+    } else if (this.sample(AUDIO_ASSETS.multiplierRoll, { volume:.34, group:'reveal', offset:.35, duration:.5, replace:true })) return true;
+    this.routed('jackpot', 'winHit', big ? 3 : 2);
     return false;
+  }
+  // 天女散花: the user's full random-multiplier clip (9.4s) drives the whole show.
+  fairyStart() { return this.music(AUDIO_ASSETS.multiplierReveal, .6); }
+  oddEvenStart() { this.routed('jackpot', 'note', 700, .16, .1, 'triangle', 0, 1180); }
+  mysteryStart() { this.routed('jackpot', 'note', 300, .3, .1, 'sine', 0, 180); this.routed('mechanical', 'note', 180, .25, .07, 'square', 0, 120); }
+  mysteryResult({ outcome = '', multiplier = 0 } = {}) {
+    if (outcome === 'MISS') { this.routed('mechanical', 'note', 200, .3, .08, 'sine', 0, 120); return; }
+    if (outcome === 'FAIRY') return;
+    if (this.sample(AUDIO_ASSETS.credit, { volume: .34, group: 'credit', replace: true })) this.routed('jackpot', 'winHit', multiplier >= 10 ? 3 : 2);
   }
   startKick() {
     if (!this.sample('start', { volume: .38, group: 'start', replace: true })) this.routed('mechanical', 'startKick');

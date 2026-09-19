@@ -16,9 +16,11 @@ import { GameEventBus } from './game-events.js';
 
 const $ = id => document.getElementById(id);
 const machine = document.querySelector('.machine');
-const board = $('board'), betStrip = $('bet-strip'), betKeys = $('bet-keys');
+const board = $('board');
+const betDeck = $('bet-deck');
 const creditEl = $('credit'), winEl = $('win'), statusEl = $('status'), resultEl = $('result');
 const startButton = $('start'), clearButton = $('clear'), rebetButton = $('rebet'), soundButton = $('sound');
+const collectButton = $('collect'), oddButton = $('odd'), evenButton = $('even');
 winEl.parentElement.classList.add('win-box');
 creditEl.parentElement.classList.add('credit-box');
 const debugMode = new URLSearchParams(location.search).get('debug') === '1';
@@ -68,19 +70,20 @@ const multiplier = new MultiplierController($('feature-value'), audio, scale, bu
 const lighting = new JackpotLightingSystem(effects, { bus, scale });
 const celebration = new WinCelebrationController(machine, effects, lighting, audio, scale, bus);
 
-const lanes = new Map(), buttons = new Map();
+// One card per channel: the fruit art is the button, the LED readout is the stake.
+const buttons = new Map();
 for (const channel of BET_CHANNELS) {
-  const lane = document.createElement('div');
-  lane.className = 'bet-lane'; lane.dataset.channel = channel.key;
-  lane.setAttribute('aria-label', `${channel.label} 下注显示`);
-  lane.innerHTML = '<strong class="bet-led led-digits">00</strong>';
-  betStrip.append(lane); lanes.set(channel.key, lane);
-  const button = document.createElement('button');
-  button.className = 'bet-key'; button.type = 'button'; button.dataset.channel = channel.key;
-  button.setAttribute('aria-label', `${channel.label} 下注 1 分`);
-  button.style.setProperty('--button-symbol', symbolUrl(channel.key));
-  button.innerHTML = `<span class="button-cap" aria-hidden="true"><span class="button-symbol"></span></span><span class="bet-key-label">${channel.label}</span>`;
-  betKeys.append(button); buttons.set(channel.key, button);
+  const card = document.createElement('button');
+  card.type = 'button';
+  card.className = 'bet-card';
+  card.dataset.channel = channel.key;
+  card.setAttribute('aria-label', `${channel.label} 下注，当前 0 分`);
+  card.innerHTML = `<span class="bet-card-art" aria-hidden="true"></span>
+    <span class="bet-card-readout"><strong class="bet-led led-digits">00</strong></span>
+    <span class="bet-card-label">${channel.label}</span>`;
+  card.querySelector('.bet-card-art').style.setProperty('background-image', symbolUrl(channel.key));
+  betDeck.append(card);
+  buttons.set(channel.key, card);
 }
 
 function render(game) {
@@ -95,13 +98,17 @@ function render(game) {
   startButton.disabled = game.busy || game.totalBet === 0;
   clearButton.disabled = game.busy || game.totalBet === 0;
   rebetButton.disabled = game.busy || !Object.values(game.lastBets).some(Boolean);
+  const canGamble = !game.busy && game.win > 0;
+  collectButton.disabled = !canGamble;
+  oddButton.disabled = !canGamble;
+  evenButton.disabled = !canGamble;
   for (const channel of BET_CHANNELS) {
     const stake = game.currentBets[toBetType(channel.key)];
-    const lane = lanes.get(channel.key), button = buttons.get(channel.key);
-    renderSevenSegment(lane.querySelector('.bet-led'), stake, 2);
-    lane.classList.toggle('active', stake > 0);
-    button.classList.toggle('active', stake > 0);
-    button.disabled = game.busy;
+    const card = buttons.get(channel.key);
+    renderSevenSegment(card.querySelector('.bet-led'), stake, 2);
+    card.classList.toggle('active', stake > 0);
+    card.disabled = game.busy;
+    card.setAttribute('aria-label', `${PRIZES[channel.key].label} 下注，当前 ${stake} 分`);
   }
 }
 engine = new GameEngine({ runner, effects, special, audio, funMode, multiplier, celebration, lighting, bus, onChange: render });
@@ -125,12 +132,12 @@ for (const [key, button] of buttons) {
     // take seconds on a cold phone and used to swallow the player's first tap.
     audio.unlock().catch(() => {});
     const changed = engine.placeBet(key, 1);
-    if (!changed) { button.classList.add('at-limit'); setTimeout(() => button.classList.remove('at-limit'), 160); }
+    if (!changed) { button.classList.add('limit'); setTimeout(() => button.classList.remove('limit'), 180); }
     holdTimer = setTimeout(() => {
       repeatTimer = setInterval(() => {
         if (!engine.placeBet(key, 10)) {
-          button.classList.add('at-limit');
-          setTimeout(() => button.classList.remove('at-limit'), 160);
+          button.classList.add('limit');
+          setTimeout(() => button.classList.remove('limit'), 180);
           release();
         }
       }, 100);
@@ -155,9 +162,9 @@ soundButton.addEventListener('click', () => {
 });
 soundButton.innerHTML = `声音 <small>${audio.enabled ? 'ON' : 'OFF'}</small>`;
 soundButton.setAttribute('aria-pressed', String(audio.enabled));
-document.querySelectorAll('[data-highlow]').forEach(button => button.addEventListener('click', () => {
-  engine.highLow(button.dataset.highlow); audio.unlock().catch(() => {});
-}));
+collectButton.addEventListener('click', () => { audio.unlock().catch(() => {}); engine.collect(); });
+oddButton.addEventListener('click', () => { audio.unlock().catch(() => {}); engine.oddEven('odd'); });
+evenButton.addEventListener('click', () => { audio.unlock().catch(() => {}); engine.oddEven('even'); });
 setupDebug(engine);
 if (debugMode) window.__fruitDebug = { engine, bus, lighting, multiplier, funMode, effects };
 document.addEventListener('visibilitychange', () => {

@@ -3,10 +3,15 @@ import { BOARD_CELLS, calculateWin, pickIndex, indicesFor } from './board-model.
 import { BET_TYPES, toBetType } from './bet-types.js';
 import { GAME_EVENTS as E } from './game-events.js';
 import { EXCITEMENT_TIERS, isSpecial } from './config/special-events.js';
+import {
+  LOSE_EVENT_WEIGHTS, LOSE_EVENT_PAYOUT, FAIRY_MULTIPLIERS, ODD_EVEN,
+  drawWeighted, drawFromPool
+} from './config/balance.js';
 
 export const GAME_STATES = Object.freeze([
   'IDLE','BETTING','SPIN_START','SPINNING','SLOW_DOWN','SUSPENSE','NORMAL_STOP','NORMAL_WIN',
-  'SPECIAL_TRIGGER','SPECIAL_INTRO','SPECIAL_RUNNING','SPECIAL_SETTLEMENT','WIN_COUNTING','READY_NEXT'
+  'SPECIAL_TRIGGER','SPECIAL_INTRO','SPECIAL_RUNNING','SPECIAL_SETTLEMENT','MYSTERY','DOUBLE_UP',
+  'WIN_COUNTING','READY_NEXT'
 ]);
 
 // Every phase LightRunner can report must be a legal engine state, otherwise the
@@ -18,23 +23,30 @@ const emptyBets = () => Object.fromEntries(BET_TYPES.map(key => [key, 0]));
 // How long the WIN meter takes to run up, per celebration level.
 const COUNT_DURATION = Object.freeze({
   NORMAL: 320, SMALL_WIN: 380, MEDIUM_WIN: 700, BIG_WIN: 1200,
-  HIGH_MULTIPLIER: 1300, SPECIAL_EVENT: 620, JACKPOT: 2000, LOSE: 0
+  HIGH_MULTIPLIER: 1300, SPECIAL_EVENT: 620, JACKPOT: 2000, FAIRY: 3200, MYSTERY: 900
 });
 
 const REVEAL_LABEL = Object.freeze({
   JACKPOT: 'JACKPOT!', BIG_WIN: 'BIG WIN!', HIGH_MULTIPLIER: 'HIGH MULTIPLIER!', MEDIUM_WIN: 'NICE!'
 });
 
-// The high-multiplier surprise always lands on a real high value symbol.
 const HIGH_SYMBOLS = ['BELL', 'STAR', 'SEVEN', 'BAR', 'SEVEN', 'STAR'];
+const MYSTERY_LABEL = Object.freeze({
+  MISS: '未中奖', CONSOLATION: '保底小奖', RESPIN: '再转一次',
+  RANDOM_MULTIPLIER: '随机倍率', MYSTERY: '神秘奖', FAIRY: '天女散花'
+});
+const MAX_WIN = 999999;
 
 export class GameEngine {
-  constructor({ runner, effects, special, audio, funMode, multiplier, celebration, lighting, bus, onChange, initialCredit = 1000 }) {
+  constructor({ runner, effects, special, audio, funMode, multiplier, celebration, lighting, bus, onChange, initialCredit = 1000, random = Math.random }) {
     this.runner = runner; this.effects = effects; this.special = special; this.audio = audio;
     this.onChange = onChange;
     this.funMode = funMode; this.multiplier = multiplier; this.celebration = celebration;
     this.lighting = lighting; this.bus = bus;
+    this.random = random;
     this.credit = initialCredit;
+    // WIN is a pending, uncollected prize. It only reaches CREDIT through 收分,
+    // so a failed 单双 challenge can never touch the player's safe balance.
     this.win = 0;
     this.currentBets = emptyBets();
     this.lastBets = emptyBets();
@@ -46,11 +58,14 @@ export class GameEngine {
     this.forcedSpecial = '';
     this.forcedSurprise = false;
     this.forcedMultiplierTier = '';
+    this.forcedLoseEvent = '';
+    this.doubleChallenges = 0;
     this.roundsPlayed = 0;
     this.emit();
   }
 
   get totalBet() { return Object.values(this.currentBets).reduce((sum, n) => sum + n, 0); }
+  get roundStake() { return Math.max(1, Object.values(this.roundBets).reduce((sum, n) => sum + n, 0)); }
   emit() { this.onChange?.(this); }
   event(type, payload) { this.bus?.emit(type, payload); }
   state(name, status = this.status) {
@@ -93,19 +108,23 @@ export class GameEngine {
   addCredit(value) { if (this.canEdit()) { this.credit += value; this.audio.credit(); this.emit(); } }
   reset() {
     if (!this.canEdit()) return;
-    this.credit = 1000; this.win = 0;
+    this.credit = 1000; this.win = 0; this.doubleChallenges = 0;
     this.currentBets = emptyBets(); this.lastBets = emptyBets();
     this.state('IDLE', '积分已重置');
   }
 
-  forcePrize(key) { this.forcedPrize = key; this.forcedSpecial = ''; this.forcedSurprise = false; }
-  forceSpecial(type) { this.forcedSpecial = type; this.forcedPrize = ''; this.forcedSurprise = false; }
-  forceSurprise() { this.forcedSurprise = true; this.forcedPrize = ''; this.forcedSpecial = ''; }
+  forcePrize(key) { this.forcedPrize = key; this.forcedSpecial = ''; this.forcedSurprise = false; this.forcedLoseEvent = ''; }
+  forceSpecial(type) { this.forcedSpecial = type; this.forcedPrize = ''; this.forcedSurprise = false; this.forcedLoseEvent = ''; }
+  forceSurprise() { this.forcedSurprise = true; this.forcedPrize = ''; this.forcedSpecial = ''; this.forcedLoseEvent = ''; }
+  forceLoseEvent(type) { this.forcedLoseEvent = type; this.forcedPrize = 'LOSE'; this.forcedSpecial = ''; this.forcedSurprise = false; }
   forceMultiplierTier(tier = '') { this.forcedMultiplierTier = tier; }
-  clearForced() { this.forcedPrize = ''; this.forcedSpecial = ''; this.forcedSurprise = false; this.forcedMultiplierTier = ''; }
+  clearForced() { this.forcedPrize = ''; this.forcedSpecial = ''; this.forcedSurprise = false; this.forcedMultiplierTier = ''; this.forcedLoseEvent = ''; }
 
   stats() {
-    return { roundsPlayed: this.roundsPlayed, credit: this.credit, win: this.win, bet: this.totalBet, ...(this.funMode?.stats?.() ?? {}) };
+    return {
+      roundsPlayed: this.roundsPlayed, credit: this.credit, win: this.win,
+      bet: this.totalBet, doubles: this.doubleChallenges, ...(this.funMode?.stats?.() ?? {})
+    };
   }
 
   // Decides the round outcome before any animation runs. The lamps only ever
@@ -121,9 +140,29 @@ export class GameEngine {
     return { kind: 'highMultiplier' };
   }
 
-  multiplierFor(tier) {
-    const pool = this.forcedMultiplierTier || tier;
-    return this.multiplier.choose(pool);
+  multiplierFor(tier) { return this.multiplier.choose(this.forcedMultiplierTier || tier); }
+
+  // ---------------------------------------------------------------- money
+  // WIN only ever moves to CREDIT through here (or automatically when a new
+  // round starts, so a pending prize can never be silently lost).
+  bankWin(status = '') {
+    if (!this.win) return 0;
+    const amount = this.win;
+    this.credit += amount;
+    this.win = 0;
+    this.doubleChallenges = 0;
+    this.audio.credit();
+    this.event(E.WIN_COLLECT, { amount, credit: this.credit });
+    if (status) this.status = status;
+    this.emit();
+    return amount;
+  }
+
+  collect() {
+    if (this.busy || !this.win) return false;
+    const amount = this.bankWin();
+    this.state('READY_NEXT', `已收分 ${amount} · CREDIT ${this.credit}`);
+    return true;
   }
 
   async countWin(amount, duration = 500, level = '') {
@@ -141,10 +180,9 @@ export class GameEngine {
       await this.effects.wait(duration / steps);
     }
     this.win = from + amount;
-    this.credit += amount;
     this.effects.cabinet.classList.remove('win-counting');
     delete this.effects.cabinet.dataset.countLevel;
-    this.event(E.WIN_END, { amount, level });
+    this.event(E.WIN_END, { amount, level, pending: this.win });
     this.emit();
   }
 
@@ -159,6 +197,7 @@ export class GameEngine {
   // 300-600ms of dead air between the lamps stopping and the multiplier firing up.
   suspense() { return 300 + Math.random() * 300; }
 
+  // ------------------------------------------------------------- round flow
   async start() {
     if (this.busy || !this.totalBet) return false;
     if (this.credit < this.totalBet) {
@@ -166,6 +205,9 @@ export class GameEngine {
       this.onInsufficient?.();
       return false;
     }
+    // A pending prize is banked before a new stake is taken, so nothing is lost
+    // and CREDIT never mixes in an uncollected win during play.
+    if (this.win > 0) this.bankWin();
     this.busy = true;
     this.roundsPlayed++;
     this.roundBets = { ...this.currentBets };
@@ -214,6 +256,26 @@ export class GameEngine {
     return tier === 'jackpot' ? 'jackpot' : 'normal';
   }
 
+  // The centre reveal for a paying ordinary fruit.
+  async revealWin(cell, symbol, poolTier) {
+    const tier = PRIZES[symbol].tier;
+    const multiplier = this.multiplierFor(poolTier || tier);
+    const revealTier = poolTier === 'high' ? 'high' : tier;
+    await this.multiplier.land(multiplier, {
+      tier: revealTier,
+      label: poolTier === 'high' ? REVEAL_LABEL.HIGH_MULTIPLIER : ''
+    });
+    this.effects.betWindowFlash(symbol);
+    this.effects.tiles[cell.index].classList.add('final');
+    const amount = calculateWin(symbol, this.roundBets[cell.betType], multiplier);
+    const level = poolTier === 'high' ? 'HIGH_MULTIPLIER' : this.celebration.classify(amount, multiplier);
+    await this.celebration.play(level, cell.index, {
+      label: REVEAL_LABEL[level] ?? '', symbols: [symbol], indices: indicesFor(symbol), target: cell.index
+    });
+    await this.settle(cell, { multiplier, level });
+    return { multiplier, level, amount };
+  }
+
   async playNormal(plan = {}) {
     let symbol = plan.symbol || '';
     let poolTier = null;
@@ -232,32 +294,147 @@ export class GameEngine {
     await this.effects.wait(this.suspense());
     this.event(E.FRUIT_HIT, { symbol, tier, index: cell.index, wagered });
 
-    if (!pays) {
-      await this.lighting.play('LOSE', { target: cell.index });
-      this.status = `${PRIZES[symbol].label} · 未中奖`;
-      return { status: this.status, outcome: 'lose', level: 'LOSE' };
-    }
+    if (!pays) return this.playLoseMystery(cell);
 
-    const multiplier = this.multiplierFor(poolTier || tier);
-    const revealTier = poolTier === 'high' ? 'high' : tier;
-    await this.multiplier.land(multiplier, { tier: revealTier, label: poolTier === 'high' ? REVEAL_LABEL.HIGH_MULTIPLIER : '' });
-    this.effects.betWindowFlash(symbol);
-    this.effects.tiles[cell.index].classList.add('final');
-
-    const amount = calculateWin(symbol, this.roundBets[cell.betType], multiplier);
-    const level = poolTier === 'high' ? 'HIGH_MULTIPLIER' : this.celebration.classify(amount, multiplier);
-    await this.celebration.play(level, cell.index, {
-      label: REVEAL_LABEL[level] ?? '',
-      symbols: [symbol],
-      indices: indicesFor(symbol),
-      target: cell.index
-    });
-    await this.settle(cell, { multiplier, level });
-    this.status = `${PRIZES[symbol].label}中奖 · ×${multiplier} · 赢得 ${this.win} 分`;
+    const { level } = await this.revealWin(cell, symbol, poolTier);
+    this.status = `${PRIZES[symbol].label}中奖 · 赢得 ${this.win} 分`;
     return { status: this.status, outcome: 'win', level };
   }
 
-  // Surprise Bonus: a light show plus free credit, without a full special event.
+  // -------------------------------------------------- 未中奖 → mystery cell
+  pickParity(kind) {
+    const odds = [1, 3, 5, 7, 9], evens = [2, 4, 6, 8];
+    const pool = kind === 'odd' ? odds : evens;
+    return pool[Math.floor(this.random() * pool.length)];
+  }
+
+  async playLoseMystery(cell) {
+    const outcome = this.forcedLoseEvent || drawWeighted(LOSE_EVENT_WEIGHTS, this.random);
+    this.forcedLoseEvent = '';
+    this.event(E.MYSTERY_START, { outcome, index: cell.index });
+    this.state('MYSTERY', `未中奖 · ${MYSTERY_LABEL[outcome]}?`);
+    await this.lighting.play('MYSTERY_INTRO', { target: cell.index, label: '???' });
+
+    if (outcome === 'MISS') {
+      await this.lighting.play('LOSE', { target: cell.index });
+      this.event(E.MYSTERY_RESULT, { outcome });
+      this.multiplier.reset();
+      this.status = `${PRIZES[cell.symbol].label} · 未中奖`;
+      return { status: this.status, outcome: 'lose', level: 'LOSE' };
+    }
+
+    if (outcome === 'RESPIN') {
+      this.celebration.banner('再转一次', 'event');
+      this.audio.chime(2);
+      this.event(E.MYSTERY_RESULT, { outcome });
+      // A free re-spin always lands on a paying symbol so the bonus cannot
+      // fizzle into a second disappointment.
+      let symbol = '';
+      while (!symbol || symbol === 'LOSE') symbol = drawPrize('');
+      const next = BOARD_CELLS[pickIndex(symbol)];
+      await this.runner.spinTo(next.index, { tier: 'normal' });
+      await this.effects.wait(this.suspense());
+      this.event(E.FRUIT_HIT, { symbol, tier: PRIZES[symbol].tier, index: next.index, wagered: true });
+      const multiplier = this.multiplierFor(PRIZES[symbol].tier);
+      await this.multiplier.land(multiplier, { tier: PRIZES[symbol].tier, label: 'AGAIN!' });
+      this.effects.betWindowFlash(symbol);
+      this.effects.tiles[next.index].classList.add('final');
+      const amount = Math.min(MAX_WIN, this.roundStake * multiplier);
+      const level = this.celebration.classify(amount, multiplier);
+      await this.celebration.play(level, next.index, { label: '再转一次', symbols: [symbol], indices: indicesFor(symbol), target: next.index });
+      this.win += amount;
+      this.emit();
+      await this.effects.wait(200);
+      this.status = `再转一次 · ${PRIZES[symbol].label} ×${multiplier} · WIN +${amount}`;
+      return { status: this.status, outcome: 'win', level };
+    }
+
+    if (outcome === 'FAIRY') return this.playFairy(cell);
+
+    const multiplier = drawFromPool(LOSE_EVENT_PAYOUT[outcome]);
+    this.event(E.MYSTERY_RESULT, { outcome, multiplier });
+    await this.multiplier.land(multiplier, { tier: 'special', label: MYSTERY_LABEL[outcome] });
+    const amount = Math.min(MAX_WIN, this.roundStake * multiplier);
+    const level = outcome === 'MYSTERY' ? 'BIG_WIN' : outcome === 'RANDOM_MULTIPLIER' ? 'MEDIUM_WIN' : 'SMALL_WIN';
+    await this.celebration.play(level, cell.index, { label: MYSTERY_LABEL[outcome], indices: [], target: cell.index });
+    this.win += amount;
+    this.audio.count();
+    this.emit();
+    await this.effects.wait(200);
+    this.status = `${MYSTERY_LABEL[outcome]} ×${multiplier} · WIN +${amount}`;
+    return { status: this.status, outcome: 'win', level };
+  }
+
+  // ------------------------------------------------------------- 天女散花
+  async playFairy(cell) {
+    const multiplier = drawFromPool(FAIRY_MULTIPLIERS, this.random);
+    this.state('MYSTERY', '天女散花');
+    this.event(E.MYSTERY_RESULT, { outcome: 'FAIRY', multiplier });
+    await this.lighting.play('FAIRY', {
+      target: cell.index,
+      label: '天女散花',
+      // The show owns the music cue: it starts after the omen, not before it.
+      announce: false,
+      onStart: () => {
+        // The music and banner fire here, after the omen, so the cue lands with
+        // the first lamp beat instead of over a dark cabinet.
+        this.event(E.FAIRY_START, { multiplier, level: 'FAIRY' });
+        this.effects.cabinet.dataset.winLevel = 'FAIRY';
+        this.celebration.banner('天女散花', 'jackpot');
+        this.celebration.shake(820);
+        this.celebration.particles(2);
+      },
+      onRoll: async () => {
+        this.event(E.FAIRY_ROLL, { multiplier });
+        await this.multiplier.land(multiplier, { tier: 'fairy', label: '天女散花' });
+      }
+    });
+    const amount = Math.min(MAX_WIN, this.roundStake * multiplier);
+    await this.countWin(amount, COUNT_DURATION.FAIRY, 'FAIRY');
+    this.status = `天女散花 ×${multiplier} · WIN +${amount}`;
+    return { status: this.status, outcome: 'win', level: 'FAIRY' };
+  }
+
+  // ------------------------------------------------------------ 单双翻倍
+  async oddEven(choice) {
+    if (this.busy || !this.win) return false;
+    this.busy = true;
+    try {
+      const label = choice === 'odd' ? '单' : '双';
+      this.event(E.ODD_EVEN_START, { choice, win: this.win, challenge: this.doubleChallenges + 1 });
+      this.state('DOUBLE_UP', `${label} · 摇号中`);
+      const won = this.random() < .5;
+      const target = this.pickParity(won ? choice : choice === 'odd' ? 'even' : 'odd');
+      await this.multiplier.rollDigits({ target, duration: 1500, tier: 'high', label });
+      await this.effects.wait(320);
+      this.doubleChallenges++;
+      if (won) {
+        this.win = Math.min(MAX_WIN, this.win * 2);
+        this.event(E.ODD_EVEN_WIN, { choice, roll: target, win: this.win });
+        await this.celebration.play('MEDIUM_WIN', this.runner.index, { label: `压${label}成功`, indices: [] });
+        this.state('READY_NEXT', `${target} · 压${label}成功，WIN 翻倍至 ${this.win}`);
+        if (this.doubleChallenges >= ODD_EVEN.maxChallenges || this.win >= ODD_EVEN.autoCollectAt) {
+          this.busy = false;
+          this.bankWin(`连续 ${this.doubleChallenges} 次 · 自动收分 ${this.win}`);
+          this.state('READY_NEXT', this.status);
+        }
+      } else {
+        const lost = this.win;
+        this.win = 0;
+        this.doubleChallenges = 0;
+        this.event(E.ODD_EVEN_LOSE, { choice, roll: target, lost });
+        await this.lighting.play('LOSE', { target: this.runner.index });
+        this.state('READY_NEXT', `${target} · 压${label}失败，WIN 归零（CREDIT 不受影响）`);
+      }
+      this.emit();
+      return true;
+    } finally {
+      this.busy = false;
+      this.emit();
+    }
+  }
+
+  // --------------------------------------------------------- 惊喜 / 特殊奖
   async playSurprise() {
     this.funMode?.noteEvent?.('SURPRISE_BONUS');
     const bonus = 120 + Math.floor(Math.random() * 9) * 40;
@@ -265,14 +442,14 @@ export class GameEngine {
     await this.runner.spinTo(pickIndex('BAR'), { tier: 'jackpot' });
     await this.effects.wait(this.suspense());
     await this.multiplier.land(multiplier, { tier: 'high', label: 'BONUS!' });
-    this.credit += bonus;
+    this.win += bonus;
     this.event(E.SURPRISE_BONUS, { bonus, multiplier });
     this.emit();
     await this.celebration.play('HIGH_MULTIPLIER', this.runner.index, {
       label: '惊喜加码', indices: indicesFor('BAR'), target: this.runner.index
     });
-    this.event(E.WIN_END, { amount: bonus, level: 'SURPRISE_BONUS' });
-    this.status = `惊喜加码 · CREDIT +${bonus} · ×${multiplier}`;
+    this.event(E.WIN_END, { amount: bonus, level: 'SURPRISE_BONUS', pending: this.win });
+    this.status = `惊喜加码 · WIN +${bonus} · ×${multiplier}`;
     return { status: this.status, outcome: 'win', level: 'HIGH_MULTIPLIER' };
   }
 
@@ -295,30 +472,6 @@ export class GameEngine {
     await this.special.run(type, ctx);
     this.status = `${EXCITEMENT_TIERS[type]?.label ?? type} · 共赢得 ${this.win} 分`;
     return { status: this.status, outcome: 'special', level: type };
-  }
-
-  async highLow(choice) {
-    if (this.busy || !this.win) return false;
-    this.busy = true;
-    try {
-      const roll = Math.floor(Math.random() * 10) + 1;
-      const won = choice === 'big' ? roll >= 6 : roll <= 5;
-      if (won) {
-        this.credit += this.win;
-        this.win *= 2;
-        this.event(E.HIGHLOW_WIN, { roll, win: this.win });
-        await this.celebration.play('MEDIUM_WIN', this.runner.index, { label: '压大小成功', indices: [] });
-        this.state('READY_NEXT', `${roll} · 压${choice === 'big' ? '大' : '小'}成功，WIN 翻倍`);
-      } else {
-        this.credit = Math.max(0, this.credit - this.win);
-        this.win = 0;
-        this.event(E.HIGHLOW_LOSE, { roll });
-        await this.lighting.play('LOSE', { target: this.runner.index });
-        this.state('READY_NEXT', `${roll} · 压${choice === 'big' ? '大' : '小'}失败`);
-      }
-      this.emit();
-      return true;
-    } finally { this.busy = false; this.emit(); }
   }
 
   specialName(type) { return EXCITEMENT_TIERS[type]?.label ?? type; }

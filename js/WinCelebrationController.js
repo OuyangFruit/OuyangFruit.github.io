@@ -84,12 +84,13 @@ export class WinCelebrationController {
 
   async play(level, target, options = {}) {
     this.machine.dataset.winLevel = level;
-    const major = ['BIG_WIN', 'JACKPOT', 'SPECIAL_EVENT', 'HIGH_MULTIPLIER'].includes(level) || Boolean(options.type);
+    const major = ['BIG_WIN', 'JACKPOT', 'SPECIAL_EVENT', 'HIGH_MULTIPLIER', 'FAIRY'].includes(level) || Boolean(options.type);
     if (major) {
-      this.shake(level === 'JACKPOT' || level === 'GRAND_SLAM' ? 700 : 520);
-      this.particles(level === 'JACKPOT' || options.type === 'GRAND_SLAM' ? 2 : 1);
+      this.shake(level === 'JACKPOT' || level === 'FAIRY' || options.type === 'GRAND_SLAM' ? 700 : 520);
+      this.particles(level === 'JACKPOT' || level === 'FAIRY' || options.type === 'GRAND_SLAM' ? 2 : 1);
     }
-    if (level === 'JACKPOT' || options.type === 'GRAND_SLAM') this.banner('JACKPOT', 'jackpot');
+    if (level === 'FAIRY') this.banner('天女散花', 'jackpot');
+    else if (level === 'JACKPOT' || options.type === 'GRAND_SLAM') this.banner('JACKPOT', 'jackpot');
     else if (options.label) this.banner(options.label, options.type ? 'event' : 'win');
     await this.lighting.play(level, { ...options, target });
     return level;

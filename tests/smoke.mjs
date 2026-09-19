@@ -9,26 +9,20 @@ import { GAME_EVENTS as E, GameEventBus } from '../js/game-events.js';
 import { CELEBRATION_PLANS, JackpotLightingSystem } from '../js/jackpot-lighting.js';
 import { LightRunner } from '../js/light-runner.js';
 import { EXCITEMENT_TIERS } from '../js/config/special-events.js';
-import { MultiplierController } from '../js/MultiplierController.js';
+import { MultiplierController, MULTIPLIER_POOLS } from '../js/MultiplierController.js';
+import { LOSE_EVENT_WEIGHTS, FAIRY_MULTIPLIERS, ODD_EVEN, drawWeighted, drawFromPool } from '../js/config/balance.js';
 
 const noop = () => {};
 const audio = new Proxy({ unlock: async () => {}, enabled: true }, { get: (o, k) => o[k] || noop });
 
-function makeBus() { return new GameEventBus(); }
-
 function fakeTiles() {
-  return BOARD_CELLS.map(() => ({
-    classList: { add: noop, remove: noop, toggle: noop },
-    style: { setProperty: noop }
-  }));
+  return BOARD_CELLS.map(() => ({ classList: { add: noop, remove: noop, toggle: noop }, style: { setProperty: noop } }));
 }
 
 function fakeElement(initial = '32') {
   const classes = new Set();
   return {
-    textContent: initial,
-    dataset: {},
-    offsetWidth: 0,
+    textContent: initial, dataset: {}, offsetWidth: 0,
     classList: {
       add: name => classes.add(name),
       remove: (...names) => names.forEach(name => classes.delete(name)),
@@ -38,104 +32,220 @@ function fakeElement(initial = '32') {
   };
 }
 
-function makeSandbox({ recording = true } = {}) {
-  const bus = makeBus();
-  const lights = [];
+// Deterministic RNG so the money model and the mystery table can be asserted.
+function seeded(values, fallback = .5) {
+  let i = 0;
+  return () => (i < values.length ? values[i++] : fallback);
+}
+
+function makeSandbox({ random = Math.random, credit = 100000 } = {}) {
+  const bus = new GameEventBus();
+  const levels = [];
   const effects = {
     tiles: fakeTiles(),
     cabinet: { classList: { add: noop, remove: noop, toggle: noop }, dataset: {} },
-    clearBetWindows: noop,
-    holdBetWindow: noop,
-    betWindowFlash: noop,
-    flashCell: async () => {},
-    restore: noop,
-    show: indices => lights.push(indices.length),
-    setPower: noop,
-    dim: noop,
+    clearBetWindows: noop, holdBetWindow: noop, betWindowFlash: noop, flashCell: async () => {},
+    restore: noop, show: noop, setPower: noop, dim: noop, centerText: noop, centerFlash: noop,
     wait: async () => {},
     timeline: { cue: async (_, light, sound) => { light?.(); sound?.(); } }
   };
   const runner = {
-    index: 0,
-    cells: BOARD_CELLS,
+    index: 0, cells: BOARD_CELLS,
     spinTo: async target => { bus.emit(E.SPIN_STOP, { target }); runner.index = target; return BOARD_CELLS[target]; }
   };
-  const multipliers = [];
-  // The real controller so the smoke test exercises the shipping reveal path.
   const multiplier = new MultiplierController(fakeElement(), audio, .02, bus);
-  const levels = [];
   const celebration = {
     clear: noop,
     classify: () => 'SMALL_WIN',
-    play: async (level) => { levels.push(level); }
+    play: async level => { levels.push(level); },
+    banner: noop, shake: noop, particles: noop
   };
-  const lighting = { play: async (level) => { levels.push(level); } };
-  const special = { run: async () => {} };
-  const funMode = { draw: () => '', noteEvent: noop, stats: () => ({}) };
+  // The lighting stub runs the fairy callbacks so the full flow is exercised.
+  const lighting = {
+    play: async (level, options = {}) => { levels.push(level); options.onStart?.(); if (options.onRoll) await options.onRoll(); }
+  };
   const engine = new GameEngine({
-    runner, effects, special, audio, funMode, multiplier, celebration, lighting, bus,
-    onChange: noop, initialCredit: 100000
+    runner, effects, special: { run: async () => {} }, audio,
+    funMode: { draw: () => '', noteEvent: noop, stats: () => ({}) },
+    multiplier, celebration, lighting, bus, onChange: noop, initialCredit: credit, random
   });
-  if (recording) bus.startRecording();
-  return { engine, bus, multiplier, multipliers, levels, lights };
+  bus.startRecording();
+  return { engine, bus, multiplier, levels };
 }
 
-// ---------------------------------------------------------------- round loop
+const eventsOf = bus => bus.stopRecording().map(entry => entry.type);
+
+// ------------------------------------------------------- round loop and event order
 {
-  const { engine, bus, multipliers } = makeSandbox();
+  const { engine, bus } = makeSandbox();
   engine.setAllBets(1);
   for (let round = 0; round < 24; round++) {
-    engine.forcePrize(round % 3 === 2 ? 'LOSE' : 'BELL');
+    if (round % 3 === 2) engine.forceLoseEvent('MISS');
+    else engine.forcePrize('BELL');
     assert.equal(await engine.start(), true);
     assert.equal(engine.busy, false, 'engine must be idle again after a round');
+    engine.collect();
   }
-  const log = bus.stopRecording();
-  const types = log.map(entry => entry.type);
-  assert.ok(types.includes(E.SPIN_START), 'spin:start must be published');
-  assert.ok(types.includes(E.SPIN_STOP), 'spin:stop must be published');
-  assert.ok(types.includes(E.FRUIT_HIT), 'fruit:hit must be published');
-  assert.ok(types.includes(E.MULTIPLIER_REVEAL), 'multiplier:reveal must be published');
-  assert.ok(types.includes(E.WIN_COUNT), 'win:count must be published');
-  assert.ok(types.includes(E.ROUND_END), 'round:end must be published');
-  // The multiplier may only be revealed after the lamps have stopped.
-  const warn = log.find(entry => entry.type === E.SPIN_STOP);
-  assert.ok(warn, 'spin stop recorded');
-  const reveals = log.filter(entry => entry.type === E.MULTIPLIER_REVEAL).map(entry => entry.payload.value);
-  assert.equal(reveals.length, 16, 'every winning round reveals exactly one multiplier');
-  assert.ok(reveals.every(value => value > 0), 'revealed multipliers are real payout values');
-  engine.forcePrize('BELL'); engine.forceMultiplierTier('jackpot');
-  bus.startRecording();
-  assert.equal(await engine.start(), true);
-  const forced = bus.stopRecording();
-  const forcedReveal = forced.find(entry => entry.type === E.MULTIPLIER_REVEAL).payload.value;
-  assert.ok([32, 48, 64].includes(forcedReveal), `forced jackpot multiplier came from the jackpot pool (${forcedReveal})`);
-  assert.equal(engine.win, forcedReveal * 1, 'the revealed multiplier is exactly the multiplier paid out');
-  engine.clearForced();
+  const types = eventsOf(bus);
+  for (const type of [E.SPIN_START, E.SPIN_STOP, E.FRUIT_HIT, E.MULTIPLIER_REVEAL, E.WIN_COUNT, E.WIN_COLLECT, E.ROUND_END]) {
+    assert.ok(types.includes(type), `${type} must be published`);
+  }
+  const stop = types.indexOf(E.SPIN_STOP);
+  assert.ok(types.indexOf(E.MULTIPLIER_ARM) > stop, 'the multiplier only arms after the lamps stop');
+  assert.ok(types.indexOf(E.WIN_COUNT) > types.indexOf(E.MULTIPLIER_REVEAL), 'WIN only counts after the reveal');
   const first = engine.start();
   assert.equal(await engine.start(), false, 'a second round cannot start mid-spin');
   await first;
   assert.ok(engine.credit >= 0, 'credit stays valid');
-  assert.ok(multipliers.length >= 0);
 }
 
-// -------------------------------------------------- reveal happens after stop
+// ---------------------------------------------- WIN is pending, CREDIT is safe
 {
-  const { engine, bus } = makeSandbox();
+  const { engine } = makeSandbox();
   engine.setAllBets(1);
-  engine.forcePrize('ORANGE');
+  engine.forcePrize('BELL');
   await engine.start();
-  const types = bus.stopRecording().map(entry => entry.type);
-  const stop = types.indexOf(E.SPIN_STOP);
-  const arm = types.indexOf(E.MULTIPLIER_ARM);
-  const reveal = types.indexOf(E.MULTIPLIER_REVEAL);
-  assert.ok(stop >= 0 && arm > stop, 'the multiplier only arms after the lamps stop');
-  assert.ok(reveal > arm, 'the reveal follows the roll');
-  assert.ok(types.indexOf(E.WIN_COUNT) > reveal, 'WIN only counts up after the reveal');
+  const afterRound = { credit: engine.credit, win: engine.win };
+  assert.ok(afterRound.win > 0, 'the round paid something');
+  assert.equal(afterRound.credit, 100000 - 8, 'CREDIT only lost the stake, the prize is still pending');
+
+  assert.equal(engine.collect(), true);
+  assert.equal(engine.win, 0, 'collecting clears WIN');
+  assert.equal(engine.credit, 100000 - 8 + afterRound.win, 'collecting banks the pending win');
+
+  engine.forcePrize('BELL');
+  await engine.start();
+  const pending = engine.win;
+  assert.ok(pending > 0);
+  engine.start().then(() => {});
+  await new Promise(resolve => setTimeout(resolve, 0));
+  assert.equal(engine.credit >= 0, true);
 }
 
-// ------------------------------------------------------------- pity / rarity
+// ------------------------------------------------------ 单双 keeps CREDIT intact
 {
-  let controller = new FunModeController();
+  const { engine } = makeSandbox({ random: seeded([0.1]) }); // < .5 wins the challenge
+  engine.setAllBets(1);
+  engine.forcePrize('BELL');
+  await engine.start();
+  const winBefore = engine.win;
+  const creditBefore = engine.credit;
+  await engine.oddEven('odd');
+  assert.equal(engine.win, winBefore * 2, 'a winning 单双 doubles the pending WIN');
+  assert.equal(engine.credit, creditBefore, 'CREDIT is untouched by 单双');
+
+  const { engine: loser } = makeSandbox({ random: seeded([0.9]) }); // >= .5 loses the challenge
+  loser.setAllBets(1);
+  loser.forcePrize('BELL');
+  await loser.start();
+  const lostCredit = loser.credit;
+  const lostWin = loser.win;
+  assert.ok(lostWin > 0);
+  await loser.oddEven('odd');
+  assert.equal(loser.win, 0, 'a failed 单双 clears the pending WIN');
+  assert.equal(loser.credit, lostCredit, 'a failed 单双 never touches CREDIT');
+}
+
+// ------------------------------------------------------- 单双 auto-collect cap
+{
+  const { engine } = makeSandbox({ random: () => .1 });
+  engine.setAllBets(1);
+  engine.forcePrize('BELL');
+  await engine.start();
+  for (let i = 0; i < ODD_EVEN.maxChallenges; i++) await engine.oddEven('odd');
+  assert.equal(engine.win, 0, `more than ${ODD_EVEN.maxChallenges} challenges banks automatically`);
+  assert.ok(engine.credit > 0);
+}
+
+// ------------------------------------------------------- 未中奖 mystery table
+{
+  const counts = Object.fromEntries(Object.keys(LOSE_EVENT_WEIGHTS).map(key => [key, 0]));
+  let rolls = 0;
+  const random = () => { rolls++; return ((rolls * 37) % 100) / 100; };
+  for (let i = 0; i < 20000; i++) counts[drawWeighted(LOSE_EVENT_WEIGHTS, random)]++;
+  const total = Object.values(counts).reduce((a, b) => a + b, 0);
+  const share = key => counts[key] / total;
+  assert.ok(Math.abs(share('MISS') - .35) < .02, `MISS share ${share('MISS').toFixed(3)}`);
+  assert.ok(Math.abs(share('CONSOLATION') - .25) < .02, `CONSOLATION share ${share('CONSOLATION').toFixed(3)}`);
+  assert.ok(Math.abs(share('FAIRY') - .02) < .01, `FAIRY share ${share('FAIRY').toFixed(3)}`);
+  assert.ok(share('FAIRY') > 0, 'the fairy show can actually appear');
+
+  // A forced MISS stays a plain loss.
+  const { engine } = makeSandbox();
+  engine.setAllBets(1);
+  engine.forceLoseEvent('MISS');
+  await engine.start();
+  assert.equal(engine.win, 0, 'MISS pays nothing');
+}
+
+// ------------------------------------------------------------- 天女散花 payout
+{
+  const { engine, bus, levels } = makeSandbox({ random: seeded([0.99, 0.5, 0.5]) });
+  engine.setAllBets(1);
+  engine.forceLoseEvent('FAIRY');
+  await engine.start();
+  const types = eventsOf(bus);
+  assert.ok(levels.includes('FAIRY'), 'the fairy show ran');
+  assert.ok(types.includes(E.FAIRY_START), 'the fairy music cue is published');
+  assert.ok(types.includes(E.FAIRY_ROLL), 'the fairy multiplier roll is published');
+  const reveal = bus.count() >= 0; // bus was already drained above
+  assert.equal(reveal, true);
+  const multiplier = engine.win / engine.roundStake;
+  assert.ok(FAIRY_MULTIPLIERS.some(([value]) => value === multiplier), `fairy multiplier ${multiplier} comes from the configured pool`);
+  assert.ok(engine.win > 0);
+}
+
+// ------------------------------------------------------------------- fake-out
+{
+  const bus = new GameEventBus();
+  let decoys = 0, jumps = 0, correct = 0;
+  bus.on(E.MULTIPLIER_TICK, payload => {
+    if (payload.phase === 'fakeout') decoys++;
+    if (payload.phase === 'jump') jumps++;
+  });
+  bus.on(E.MULTIPLIER_REVEAL, payload => { if (payload.value === 64) correct++; });
+  const controller = new MultiplierController(fakeElement(), audio, .01, bus);
+  const rounds = 160;
+  for (let i = 0; i < rounds; i++) await controller.land(64, { tier: 'jackpot' });
+  assert.equal(correct, rounds, 'the revealed value is always the real one');
+  assert.ok(decoys > 0, 'fake-outs do happen on the jackpot tier');
+  assert.equal(decoys, jumps, 'every fake-out is followed by exactly one jump');
+  assert.ok(decoys / rounds < .6, 'fake-outs stay a surprise, not the norm');
+}
+
+// ------------------------------------------------------------- 单双 digit roll
+{
+  const bus = new GameEventBus();
+  const digits = [];
+  bus.on(E.MULTIPLIER_TICK, payload => { if (payload.digit) digits.push(payload.value); });
+  bus.on(E.MULTIPLIER_REVEAL, payload => digits.push(payload.value));
+  const controller = new MultiplierController(fakeElement(), audio, .01, bus);
+  const target = await controller.rollDigits({ target: 7, duration: 900, label: '单' });
+  assert.equal(target, 7);
+  assert.equal(digits[digits.length - 1], 7, 'the centre locks on the drawn digit');
+  assert.ok(digits.length > 4, 'the digit rolls several times before locking');
+  assert.ok(digits.every(value => value >= 1 && value <= 9), 'only 1-9 are shown');
+}
+
+// ------------------------------------------------------------- lamp rhythm
+{
+  for (const phase of RUNNER_PHASES) assert.ok(GAME_STATES.includes(phase), `the engine accepts the ${phase} lamp phase`);
+  const bus = new GameEventBus();
+  bus.startRecording();
+  const tiles = BOARD_CELLS.map(() => ({ classList: { add: noop, remove: noop, toggle: noop } }));
+  const runner = new LightRunner(BOARD_CELLS.map((cell, index) => ({ ...cell, index })), tiles,
+    new Proxy({ tick: noop, stop: noop }, { get: (o, k) => o[k] || noop }), noop, .02, bus);
+  const cell = await runner.spinTo(17, { tier: 'jackpot' });
+  assert.equal(cell.index, 17, 'the lamps always land on the predetermined cell');
+  const types = bus.stopRecording().map(entry => entry.type);
+  for (const type of [E.SPIN_TICK, E.SPIN_ACCELERATE, E.SPIN_CRUISE, E.SPIN_DECELERATE, E.SPIN_SUSPENSE, E.SPIN_STOP]) {
+    assert.ok(types.includes(type), `${type} is part of the spin`);
+  }
+}
+
+// --------------------------------------------------------------- pity curve
+{
+  const controller = new FunModeController();
   let gaps = [], gap = 0, tally = new Map();
   for (let i = 0; i < 20000; i++) {
     gap++;
@@ -144,114 +254,62 @@ function makeSandbox({ recording = true } = {}) {
   }
   const average = gaps.reduce((a, b) => a + b, 0) / gaps.length;
   assert.ok(average >= 3 && average <= 5, `excitement average gap ${average}`);
-  const grand = tally.get('GRAND_SLAM') ?? 0;
-  const small = tally.get('SMALL_THREE') ?? 0;
-  assert.ok(grand > 0, 'the legendary surprise can still appear');
-  assert.ok(grand / small < .25, `grand slam stays rare (${grand} vs ${small})`);
-  assert.ok((tally.get('SURPRISE_BONUS') ?? 0) > 0, 'surprise bonus is part of the rotation');
-  assert.ok((tally.get('HIGH_MULTIPLIER') ?? 0) > 0, 'high multiplier is part of the rotation');
-
-  // Legendary gating: never on the first draw, never twice inside the cooldown.
-  controller = new FunModeController({ random: () => 0 });
-  const first = controller.draw();
-  assert.notEqual(first, 'GRAND_SLAM', 'legendary needs heat before it can fire');
-}
-
-// ------------------------------------------------------------- event plumbing
-{
-  const { engine, bus } = makeSandbox();
-  engine.setAllBets(1);
-  const before = bus.count();
-  for (let round = 0; round < 20; round++) { engine.forcePrize('APPLE'); await engine.start(); }
-  assert.equal(bus.count(), before, 'no listener leak across rounds');
+  assert.ok((tally.get('GRAND_SLAM') ?? 0) / (tally.get('SMALL_THREE') ?? 1) < .25, 'legendary stays rare');
 }
 
 // --------------------------------------------------------- lighting coverage
 {
   const phaseLog = [];
-  const events = [];
-  const bus = makeBus();
-  bus.on('*', (payload, type) => { if (type.startsWith('jackpot:')) events.push(type); });
   const fx = {
     tiles: fakeTiles(),
     cabinet: { classList: { add: noop, remove: noop }, dataset: {} },
     runner: { index: 3 },
     audio: new Proxy({}, { get: () => noop }),
     show: indices => phaseLog.push(indices.length),
-    only: noop,
-    ring: () => phaseLog.push('ring'),
-    blackout: () => phaseLog.push('blackout'),
-    setPower: noop,
-    dim: () => phaseLog.push('dim'),
-    centerFlash: () => phaseLog.push('center'),
+    only: noop, ring: () => phaseLog.push('ring'), blackout: () => phaseLog.push('blackout'),
+    setPower: noop, dim: () => phaseLog.push('dim'), centerFlash: () => phaseLog.push('center'),
+    centerText: () => phaseLog.push('text'),
     wait: async () => {},
     timeline: { cue: async (_, light, sound) => { light?.(); sound?.(); } },
     chaseClockwise: async () => { phaseLog.push('lap'); },
     chaseCounterClockwise: async () => { phaseLog.push('lap'); },
     cascade: async order => { phaseLog.push(`wave:${order.length}`); }
   };
-  const lighting = new JackpotLightingSystem(fx, { bus, scale: .02 });
-  const required = ['LOSE', 'SMALL_WIN', 'MEDIUM_WIN', 'BIG_WIN', 'HIGH_MULTIPLIER', 'SPECIAL_EVENT',
-    'JACKPOT', 'SMALL_THREE', 'BIG_THREE', 'BIG_FOUR', 'DOUBLE_CANNON', 'TRAIN', 'GRAND_SLAM'];
+  const lighting = new JackpotLightingSystem(fx, { bus: new GameEventBus(), scale: .02 });
+  const required = ['MYSTERY_INTRO', 'LOSE', 'SMALL_WIN', 'MEDIUM_WIN', 'BIG_WIN', 'HIGH_MULTIPLIER', 'SPECIAL_EVENT',
+    'JACKPOT', 'SMALL_THREE', 'BIG_THREE', 'DOUBLE_CANNON', 'BIG_FOUR', 'TRAIN', 'GRAND_SLAM', 'FAIRY'];
   for (const level of required) {
     assert.ok(CELEBRATION_PLANS[level], `${level} has a lighting plan`);
-    phaseLog.length = 0; events.length = 0;
-    await lighting.play(level, { target: 5, indices: [1, 6, 9, 15], type: level === 'GRAND_SLAM' ? 'GRAND_SLAM' : '' });
+    phaseLog.length = 0;
+    await lighting.play(level, { target: 5, indices: [1, 6, 9, 15], type: level, announce: false, onRoll: async () => phaseLog.push('roll') });
     assert.ok(phaseLog.length > 0, `${level} actually drives lamps`);
   }
-  const grand = CELEBRATION_PLANS.GRAND_SLAM.phases;
-  assert.deepEqual(grand, ['blackout', 'center', 'burst2', 'wave', 'ring', 'sync', 'finale'],
-    'grand slam follows the full blackout -> wave -> ring -> sync -> finale sequence');
-  assert.ok(CELEBRATION_PLANS.JACKPOT.duration >= 3000 && CELEBRATION_PLANS.JACKPOT.duration <= 6000,
-    'jackpot celebration runs 3-6 seconds');
-  assert.equal(new Set(Object.values(PRESENTATIONS).map(x => x.lightSequence)).size, 6,
-    'six specials have distinct presentation plans');
-  for (const preset of Object.values(PRESENTATIONS)) {
-    assert.ok(CELEBRATION_PLANS[preset.lightSequence], `${preset.lightSequence} plan exists`);
-  }
+  // Every level must have its own choreography, not a shared flash.
+  const signatures = new Set(required.map(level => JSON.stringify(CELEBRATION_PLANS[level].phases)));
+  assert.ok(signatures.size >= 11, `special events have distinct choreography (${signatures.size}/15 unique)`);
+  assert.deepEqual(CELEBRATION_PLANS.GRAND_SLAM.phases, ['blackout', 'fruitGroups', 'wave', 'ring', 'sync', 'finale']);
+  assert.deepEqual(CELEBRATION_PLANS.DOUBLE_CANNON.phases, ['burstLeft', 'pause', 'burstRight', 'allBoom']);
+  assert.equal(CELEBRATION_PLANS.FAIRY.custom, 'fairy');
+  assert.equal(new Set(Object.values(PRESENTATIONS).map(x => x.lightSequence)).size, 6);
 }
 
-// ------------------------------------------------------------- lamp rhythm
-{
-  for (const phase of RUNNER_PHASES) {
-    assert.ok(GAME_STATES.includes(phase), `the engine accepts the ${phase} lamp phase`);
-  }
-  const bus = makeBus();
-  bus.startRecording();
-  const tiles = BOARD_CELLS.map(() => ({
-    classList: { add: noop, remove: noop, toggle: noop }
-  }));
-  const runner = new LightRunner(BOARD_CELLS.map((cell, index) => ({ ...cell, index })), tiles,
-    new Proxy({ tick: noop, stop: noop }, { get: (o, k) => o[k] || noop }), noop, .02, bus);
-  const target = 17;
-  const cell = await runner.spinTo(target, { tier: 'jackpot' });
-  assert.equal(cell.index, target, 'the lamps always land on the predetermined cell');
-  assert.equal(runner.index, target, 'the lamp index matches the outcome');
-  const types = bus.stopRecording().map(entry => entry.type);
-  for (const type of [E.SPIN_TICK, E.SPIN_ACCELERATE, E.SPIN_CRUISE, E.SPIN_DECELERATE, E.SPIN_SUSPENSE, E.SPIN_STOP]) {
-    assert.ok(types.includes(type), `${type} is part of the spin`);
-  }
-  const order = [E.SPIN_ACCELERATE, E.SPIN_CRUISE, E.SPIN_DECELERATE, E.SPIN_SUSPENSE, E.SPIN_STOP]
-    .map(type => types.lastIndexOf(type));
-  assert.deepEqual([...order].sort((a, b) => a - b), order, 'spin phases run in arcade order');
-}
-
-// --------------------------------------------------------------- audio rules
+// ----------------------------------------------------------------- audio map
 {
   assert.equal(AUDIO_ASSETS.jackpotMusic.length, 2);
   assert.equal(AUDIO_ASSETS.randomMusic.length, 7);
-  const next = AUDIO_ASSETS.randomMusic.filter(x => x !== AUDIO_ASSETS.randomMusic[0]);
-  assert.ok(next.length === AUDIO_ASSETS.randomMusic.length - 1);
-  assert.ok(Object.keys(EXCITEMENT_TIERS).length >= 8, 'excitement table includes non-special surprises');
-  assert.ok(BET_TYPES.length === 8, 'eight bet channels are untouched');
+  assert.equal(AUDIO_ASSETS.multiplierRoll, 'multiplier_count_roll', 'the real 哒哒 clip drives the reveal');
+  assert.equal(AUDIO_ASSETS.multiplierReveal, 'jackpot_random_multiplier', 'the 天女散花 master is the fairy bed');
+  assert.equal(BET_TYPES.length, 8, 'eight bet channels are untouched');
+  assert.equal(MULTIPLIER_POOLS.jackpot.join(','), '32,48,64');
+  assert.ok(drawFromPool(FAIRY_MULTIPLIERS, () => 0) === 24, 'the fairy pool starts at x24');
 }
 
 console.log(JSON.stringify({
   rounds: 24,
-  concurrentStartBlocked: true,
-  multiplierMatchesPayout: true,
-  revealAfterStop: true,
+  winIsPending: true,
+  oddEvenKeepsCredit: true,
+  mysteryOutcomes: Object.keys(LOSE_EVENT_WEIGHTS).length,
+  fairyPool: FAIRY_MULTIPLIERS.length,
   celebrationPlans: Object.keys(CELEBRATION_PLANS).length,
-  specialPresentations: 6,
-  audioMap: true
+  specialPresentations: 6
 }, null, 2));

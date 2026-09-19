@@ -4,6 +4,10 @@ const SPECIAL_BUTTONS = [
   ['SMALL_THREE', '小三元'], ['BIG_THREE', '大三元'], ['BIG_FOUR', '大四喜'],
   ['DOUBLE_CANNON', '双响炮'], ['TRAIN', '开火车'], ['GRAND_SLAM', '大满贯']
 ];
+const MYSTERY_BUTTONS = [
+  ['MISS', '真未中奖'], ['CONSOLATION', '保底小奖'], ['RESPIN', '再转一次'],
+  ['RANDOM_MULTIPLIER', '随机倍率'], ['MYSTERY', '神秘奖'], ['FAIRY', '天女散花']
+];
 
 export function setupDebug(engine) {
   const panel = document.getElementById('debug');
@@ -17,8 +21,12 @@ export function setupDebug(engine) {
     <select id="forced-mult"><option value="">跟随水果</option><option value="small">小倍率</option><option value="big">大倍率</option><option value="jackpot">Jackpot</option><option value="high">高倍率</option></select>
     <button type="button" data-target-mult>用指定倍率开一局</button>
     ${SPECIAL_BUTTONS.map(([type, label]) => `<button type="button" data-special="${type}">${label}</button>`).join('')}
+    <label for="forced-mystery">未中奖事件</label>
+    <select id="forced-mystery">${MYSTERY_BUTTONS.map(([type, label]) => `<option value="${type}">${label}</option>`).join('')}</select>
+    <button type="button" data-mystery>触发未中奖事件</button>
     <button type="button" data-surprise>惊喜加码</button>
     <button type="button" data-highmult>高倍率水果</button>
+    <button type="button" data-double>自动单双（用现有 WIN）</button>
     <button type="button" data-stress>连跑 20 局</button>
     <button type="button" data-add-credit>+1000 CREDIT</button>
     <button type="button" data-all-bets="10">全部下注10</button>
@@ -28,8 +36,8 @@ export function setupDebug(engine) {
     <output data-stats></output>`;
   const stats = panel.querySelector('[data-stats]');
   const tierSelect = panel.querySelector('#forced-mult');
-
-  const report = (text) => { stats.textContent = text; };
+  const mysterySelect = panel.querySelector('#forced-mystery');
+  const report = text => { stats.textContent = text; };
 
   async function stress(rounds = 20) {
     engine.clearForced();
@@ -56,15 +64,21 @@ export function setupDebug(engine) {
     } else if (button.dataset.special) {
       engine.forceSpecial(button.dataset.special);
       engine.start();
+    } else if (button.dataset.mystery !== undefined) {
+      engine.forceLoseEvent(mysterySelect.value);
+      engine.start();
     } else if (button.dataset.surprise !== undefined) {
       engine.forceSurprise();
       engine.start();
     } else if (button.dataset.highmult !== undefined) {
       engine.forceMultiplierTier(tierSelect.value || 'high');
-      engine.forcePrize('');
       engine.forcedSurprise = false;
+      engine.forcedSpecial = '';
       engine.forcedPrize = 'STAR';
       engine.start();
+    } else if (button.dataset.double !== undefined) {
+      if (!engine.win) { engine.forcePrize('BELL'); engine.start().then(() => engine.oddEven('odd')); }
+      else engine.oddEven(Math.random() < .5 ? 'odd' : 'even');
     } else if (button.dataset.stress !== undefined) {
       stress();
     } else if (button.dataset.addCredit !== undefined) engine.addCredit(1000);
@@ -73,7 +87,5 @@ export function setupDebug(engine) {
     else if (button.dataset.reset !== undefined) engine.reset();
   });
 
-  setInterval(() => {
-    if (!engine.busy) report(JSON.stringify(engine.stats()));
-  }, 700);
+  setInterval(() => { if (!engine.busy) report(JSON.stringify(engine.stats())); }, 700);
 }

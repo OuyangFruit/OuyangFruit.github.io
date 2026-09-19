@@ -51,18 +51,23 @@ export class LightingEffects {
     this.featureValue.setAttribute('aria-label', event ? `${names[event]} 中央功能灯` : '中央功能盘数值');
   }
   betWindowFlash(symbol) {
-    const lane = document.querySelector(`.bet-lane[data-channel="${symbol}"]`);
-    if (!lane) return;
-    lane.classList.add('special-hit');
-    const button = document.querySelector(`.bet-key[data-channel="${symbol}"]`);
-    button?.classList.add('winner');
-    setTimeout(() => { lane.classList.remove('special-hit'); button?.classList.remove('winner'); }, Math.max(80, 450 * this.scale));
+    const card = document.querySelector(`.bet-card[data-channel="${symbol}"]`);
+    if (!card) return;
+    card.classList.add('winner');
+    setTimeout(() => card.classList.remove('winner'), Math.max(80, 450 * this.scale));
+  }
+  // Transient centre text (??? during a mystery, event names, JACKPOT). The
+  // multiplier controller owns the element again on its next arm/reveal.
+  centerText(text) {
+    if (!this.featureValue) return;
+    if (text === null || text === undefined) return;
+    this.featureValue.textContent = text;
+    this.featureValue.classList.toggle('center-symbol', Boolean(text));
   }
   holdBetWindow(symbol) {
-    document.querySelector(`.bet-lane[data-channel="${symbol}"]`)?.classList.add('special-complete');
-    document.querySelector(`.bet-key[data-channel="${symbol}"]`)?.classList.add('special-complete');
+    document.querySelector(`.bet-card[data-channel="${symbol}"]`)?.classList.add('settled');
   }
-  clearBetWindows() { document.querySelectorAll('.bet-lane,.bet-key').forEach(item => item.classList.remove('special-hit', 'special-complete', 'winner')); }
+  clearBetWindows() { document.querySelectorAll('.bet-card').forEach(item => item.classList.remove('settled', 'winner', 'limit')); }
   vibrate(pattern) { if (typeof navigator.vibrate === 'function') navigator.vibrate(pattern); }
   async flashCell(index, count = 2, power = 1) {
     for (let i = 0; i < count; i++) {

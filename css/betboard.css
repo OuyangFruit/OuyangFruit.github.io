@@ -1,0 +1,146 @@
+/* Bottom deck: one tappable card per fruit channel.
+   Art first, score second — never a row of number inputs. */
+.bet-section { background: #8d1030; }
+.bet-deck {
+  display: grid;
+  grid-template-columns: repeat(8, minmax(0, 1fr));
+  gap: 4px;
+  padding: 5px 4px 4px;
+  background:
+    linear-gradient(#5e0d24, #3d0817) padding-box,
+    repeating-linear-gradient(90deg, #f0c877 0 2px, #b98a3c 2px 4px);
+  border-block: 3px solid #f5d185;
+}
+
+.bet-card {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+  min-width: 0;
+  padding: 4px 2px 3px;
+  border: 2px solid #e2b06a;
+  border-bottom-width: 5px;
+  border-radius: 7px 7px 5px 5px;
+  background: linear-gradient(#c8843f, #8e4a2c 60%, #6b2a22);
+  box-shadow: inset 0 1px #ffdfa8, 0 3px 3px #34050f;
+  color: #ffe8ad;
+  font: inherit;
+  cursor: pointer;
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+  transition: transform .08s ease, box-shadow .12s ease, filter .12s ease;
+}
+.bet-card:disabled { cursor: not-allowed; }
+
+.bet-card-art {
+  display: block;
+  width: 100%;
+  aspect-ratio: 1;
+  background-color: #f4e3c0;
+  background-image: var(--symbol-url);
+  background-repeat: no-repeat;
+  background-position: center;
+  background-size: 88% 88%;
+  border: 2px solid #7b3a2a;
+  border-radius: 5px;
+  box-shadow: inset 0 0 6px #00000055, inset 0 2px 0 #fff6dd;
+  filter: saturate(.55) brightness(.72);
+  transition: filter .14s ease, box-shadow .14s ease;
+}
+
+.bet-card-readout {
+  display: block;
+  width: 100%;
+  padding: 1px 0;
+  border: 2px ridge #f2c977;
+  border-radius: 3px;
+  background: #3f101bf5;
+  box-shadow: inset 0 0 4px #10070c;
+  text-align: center;
+}
+.bet-card-readout .bet-led {
+  position: static;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 1px;
+  height: auto;
+  border: 0;
+  background: none;
+  box-shadow: none;
+}
+.bet-card-readout .digit { --dw: clamp(8px, 1.35vw, 15px); }
+
+.bet-card-label {
+  font-size: clamp(6px, .95vw, 10px);
+  font-weight: 900;
+  letter-spacing: .02em;
+  color: #ffe9b5;
+  text-shadow: 1px 1px #7d1f33;
+  white-space: nowrap;
+}
+
+/* Idle: the fruit is present but dim; bet: the card lights up. */
+.bet-card.active {
+  background: linear-gradient(#ffd07a, #c9622f 60%, #8f2f21);
+  box-shadow: inset 0 1px #fff3cd, 0 0 12px 2px #ffca63, 0 3px 3px #34050f;
+}
+.bet-card.active .bet-card-art {
+  filter: saturate(1.12) brightness(1.06);
+  box-shadow: inset 0 0 6px #00000044, 0 0 8px #ffd87a, inset 0 2px 0 #fff6dd;
+}
+.bet-card.active .bet-card-readout { background: #6b0a15; box-shadow: inset 0 0 5px #1a0409, 0 0 7px #ffbf4b; }
+
+.bet-card.limit .bet-card-art { animation: card-limit .15s 2 alternate; }
+@keyframes card-limit { to { filter: brightness(2) saturate(.3) } }
+
+.bet-card.winner .bet-card-art { animation: card-win .17s 3 alternate; }
+@keyframes card-win { to { filter: brightness(1.55) saturate(1.4); box-shadow: 0 0 14px 3px #ffe07b } }
+.bet-card.settled .bet-card-readout { background: #7b2b16; }
+
+.bet-card:active { transform: translateY(3px); border-bottom-width: 2px; }
+
+/* Function keys: 收分 / 单 / 双 */
+.function-bank { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 5px; margin-top: 6px; }
+.bank-key {
+  height: 30px;
+  padding: 0;
+  border: 2px solid #eac88a;
+  border-bottom: 5px solid #7a3540;
+  border-radius: 5px;
+  background: linear-gradient(#fff0bf, #e1ad75 62%, #b7675f);
+  color: #6b263b;
+  font-weight: 900;
+  font-size: 12px;
+  box-shadow: inset 0 1px #fff9d2, 0 2px 2px #7b1430;
+  cursor: pointer;
+  touch-action: manipulation;
+}
+.bank-key small { display: block; font-size: 7px; line-height: 7px; }
+.bank-key:disabled { opacity: .45; cursor: not-allowed; }
+.bank-key.collect-key:not(:disabled) { background: linear-gradient(#ffe08a, #f0a93c 60%, #c2701f); color: #4a2109; animation: collect-breathe .9s infinite alternate; }
+@keyframes collect-breathe { to { box-shadow: inset 0 1px #fff9d2, 0 0 14px 3px #ffd45c } }
+
+/* LED scoreboard: brighter segments, tighter acrylic bezel. */
+.score-box {
+  border: 4px double #9fd3e0;
+  background: linear-gradient(#241a2b, #0b0a12 30%, #100a16);
+  box-shadow: inset 0 0 0 2px #f0cd86, inset 0 0 26px #000, 0 0 12px #ff9b4a22;
+}
+.score-box .led-digits { filter: drop-shadow(0 0 3px #ff8a3c88) drop-shadow(0 0 7px #ff5a1a55); }
+.segment.on { background: linear-gradient(125deg, #ffe9a4, #ffa245 53%, #ff5a20); box-shadow: 0 0 4px #ff8a3a, 0 0 8px #ff4a18; }
+.segment { background: #3a161f; opacity: .55; }
+.score-label { color: #ffc7ae; text-shadow: 0 1px 0 #5a3445, 0 0 6px #ff7a3c55; }
+
+@media (max-width: 600px) {
+  .bet-deck { gap: 2px; padding: 4px 3px 3px; }
+  .bet-card { padding: 3px 1px 2px; border-width: 1px; border-bottom-width: 4px; gap: 2px; }
+  .bet-card-art { background-size: 92% 92%; border-width: 1px; }
+  .bet-card-readout { border-width: 1px; }
+  .bet-card-readout .digit { --dw: clamp(7px, 2.35vw, 11px); }
+  .bet-card-label { font-size: 5.5px; }
+  .bank-key { height: 27px; font-size: 10px; border-width: 1px; border-bottom-width: 4px; }
+  .bank-key small { font-size: 6px; line-height: 6px; }
+}

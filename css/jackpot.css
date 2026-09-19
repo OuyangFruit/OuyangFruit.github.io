@@ -41,9 +41,34 @@
 .feature-led.multiplier-armed { color: #ffd27a; opacity: .55; text-shadow: 0 0 4px #ffae3f; }
 .feature-led.multiplier-rolling { animation: multiplier-flicker .11s steps(2) infinite; }
 @keyframes multiplier-flicker { 50% { filter: brightness(1.55) } }
+
+/* The panel centres the readout with left/top, so the reveal must scale only —
+   the inherited translate(-50%,-50%) used to shove the number off-centre. */
+@keyframes multiplier-reveal {
+  0% { transform: scale(.35); filter: brightness(3) }
+  22% { transform: scale(1.92) rotate(-3deg) }
+  42% { transform: scale(1.42) rotate(2deg) }
+  100% { transform: scale(1) }
+}
 .feature-led[data-tier="jackpot"].multiplier-reveal { animation-duration: 1.85s; }
 .feature-led[data-tier="high"].multiplier-reveal,
 .feature-led[data-tier="big"].multiplier-reveal { animation-duration: 1.6s; }
+
+/* Mystery / 单双 readouts reuse the same centre window. */
+.feature-led.center-symbol {
+  font-size: clamp(20px, 4.4vw, 44px); letter-spacing: .08em;
+  color: #ffe16d; text-shadow: 0 0 9px #ffb43c, 0 0 20px #ed5729;
+  animation: center-question .5s infinite alternate;
+}
+@keyframes center-question { to { filter: brightness(1.55) } }
+.feature-led.digit-lock { animation: digit-lock .46s cubic-bezier(.2,.9,.2,1); }
+@keyframes digit-lock {
+  0% { transform: scale(1.7); filter: brightness(2.2) }
+  60% { transform: scale(.96) }
+  100% { transform: scale(1) }
+}
+.feature-led.multiplier-fakeout { animation: fakeout-pulse .24s 2 alternate; }
+@keyframes fakeout-pulse { to { filter: brightness(1.4) } }
 
 /* Whole-panel blackout used before a jackpot build-up. Only opacity changes. */
 .board,.center-feature-photo { transition: opacity .16s linear, filter .16s linear; }

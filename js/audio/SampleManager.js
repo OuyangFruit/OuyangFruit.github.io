@@ -32,7 +32,9 @@ export class SampleManager {
   preload(manifest) {
     return Promise.all(Object.entries(manifest).map(([key, url]) => this.load(key, url)));
   }
-  play(key, { volume = .12, rate = 1, group = 'oneshot', replace = false } = {}) {
+  // offset/duration let one long source clip serve as both a bed and a short
+  // one-shot (the 天女散花 master doubles as the per-step multiplier "哒").
+  play(key, { volume = .12, rate = 1, group = 'oneshot', replace = false, offset = 0, duration = 0 } = {}) {
     const buffer = this.cache.get(key);
     if (!buffer) return false;
     if (replace) this.stop(group);
@@ -45,7 +47,9 @@ export class SampleManager {
     voices.add(source);
     this.groups.set(group, voices);
     source.addEventListener('ended', () => voices.delete(source), { once: true });
-    source.start();
+    if (duration > 0) source.start(0, Math.min(offset, buffer.duration), Math.min(duration, buffer.duration));
+    else if (offset > 0) source.start(0, Math.min(offset, buffer.duration));
+    else source.start();
     return true;
   }
   stop(group) {
