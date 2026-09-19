@@ -8,6 +8,10 @@ import { GameEngine } from './game-engine.js';
 import { AudioEngine } from './audio/AudioEngine.js';
 import { setupDebug } from './debug.js';
 import { renderSevenSegment } from './led-display.js';
+import { FunModeController } from './FunModeController.js';
+import { MultiplierController } from './MultiplierController.js';
+import { LightShowEngine } from './LightShowEngine.js';
+import { WinCelebrationController } from './WinCelebrationController.js';
 
 const $ = id => document.getElementById(id);
 const machine = document.querySelector('.machine');
@@ -48,6 +52,10 @@ const runner = new LightRunner(cells, tiles, audio, phase => {
 }, scale);
 const effects = new LightingEffects(tiles, machine, runner, audio, scale);
 const special = new SpecialEventEngine(runner, effects, audio);
+const funMode = new FunModeController({ enabled: true });
+const multiplier = new MultiplierController($('feature-value'), audio, scale);
+const lightShows = new LightShowEngine(effects);
+const celebration = new WinCelebrationController(machine, effects, lightShows, audio, scale);
 
 const lanes = new Map(), buttons = new Map();
 for (const channel of BET_CHANNELS) {
@@ -85,7 +93,7 @@ function render(game) {
     button.disabled = game.busy;
   }
 }
-engine = new GameEngine({ runner, effects, special, audio, onChange: render });
+engine = new GameEngine({ runner, effects, special, audio, funMode, multiplier, celebration, onChange: render });
 engine.onInsufficient = () => {
   creditEl.parentElement.classList.add('credit-warning');
   setTimeout(() => creditEl.parentElement.classList.remove('credit-warning'), 700);
@@ -133,6 +141,9 @@ soundButton.addEventListener('click', async () => {
 });
 soundButton.innerHTML = `声音 <small>${audio.enabled ? 'ON' : 'OFF'}</small>`;
 soundButton.setAttribute('aria-pressed', String(audio.enabled));
+document.querySelectorAll('[data-highlow]').forEach(button => button.addEventListener('click', () => {
+  engine.highLow(button.dataset.highlow); audio.unlock().catch(() => {});
+}));
 setupDebug(engine);
 document.addEventListener('visibilitychange', () => {
   if (document.hidden && audio.context?.state === 'running') audio.context.suspend();
