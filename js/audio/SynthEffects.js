@@ -1,7 +1,8 @@
 export class SynthEffects {
-  constructor(context, output) {
+  constructor(context, output, noiseBuffer = null) {
     this.context = context;
     this.output = output;
+    if (noiseBuffer) { this.noiseBuffer = noiseBuffer; return; }
     const buffer = context.createBuffer(1, context.sampleRate, context.sampleRate);
     const channel = buffer.getChannelData(0);
     for (let i = 0; i < channel.length; i++) channel[i] = Math.random() * 2 - 1;
@@ -34,9 +35,25 @@ export class SynthEffects {
   }
 
   tick(slow = false, speed = 60) {
-    const frequency = slow ? Math.max(780, 1130 - speed) : 1220;
-    this.note(frequency, slow ? .045 : .027, slow ? .055 : .035, 'square');
+    const frequency = slow ? Math.max(700, 1040 - speed) : 1100;
+    this.note(frequency, slow ? .055 : .025, slow ? .08 : .045, 'square', 0, frequency * .72);
+    if (slow) this.note(145, .045, .048, 'sine', 0, 95);
   }
+  button(repeat = false) {
+    this.noise(.035, repeat ? .07 : .05, 2400);
+    this.note(repeat ? 840 : 680, .075, .095, 'square', .009, repeat ? 1120 : 830);
+  }
+  startKick() {
+    this.note(125, .38, .23, 'sine', 0, 43);
+    this.noise(.13, .085, 950);
+    this.note(390, .3, .11, 'sawtooth', .11, 880);
+  }
+  suspense(level = 1) {
+    this.note(90, .18, .085, 'sine', 0, 55);
+    this.note(470 + level * 95, .12, .045, 'triangle', .02, 590 + level * 100);
+  }
+  landing() { this.note(170, .32, .17, 'sine', 0, 52); this.noise(.15, .095, 1200); this.note(760, .19, .09, 'triangle', .025, 410); }
+  coin(step = 0) { this.note(1350 + step * 110, .095, .07, 'sine'); this.note(1740 + step * 95, .13, .04, 'triangle', .04); }
   stop() { this.note(900, .15, .10); this.note(1350, .12, .055, 'triangle'); }
   limit() { this.note(740, .09, .08, 'square'); }
   lowCredit() { this.note(190, .15, .10, 'sawtooth', 0, 105); }
