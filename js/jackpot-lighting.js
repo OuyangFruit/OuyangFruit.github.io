@@ -118,7 +118,6 @@ export class JackpotLightingSystem {
       if (major && announce) this.bus?.emit(E.JACKPOT_END, { level, type: ctx.type });
       this.fx.setPower(0);
       this.fx.dim(false);
-      this.fx.centerText('');
       this.running = false;
     }
     return ctx;
@@ -333,7 +332,6 @@ export class JackpotLightingSystem {
     // 6. the whole cabinet goes dark for a beat
     this.fx.blackout();
     this.fx.dim(true);
-    this.fx.centerText('');
     await this.wait(320);
 
     // 7. final hit: the board slams on and holds while WIN rolls up
