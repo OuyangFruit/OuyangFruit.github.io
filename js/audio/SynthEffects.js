@@ -35,9 +35,65 @@ export class SynthEffects {
   }
 
   tick(slow = false, speed = 60) {
-    const frequency = slow ? Math.max(700, 1040 - speed) : 1100;
-    this.note(frequency, slow ? .055 : .025, slow ? .08 : .045, 'square', 0, frequency * .72);
-    if (slow) this.note(145, .045, .048, 'sine', 0, 95);
+    // Pitch and level follow the lamp speed, so the tick pattern rises during the
+    // spin and drops back down as the cabinet slows.
+    if (slow) {
+      const frequency = Math.max(520, 1180 - speed);
+      this.note(frequency, .06, .095, 'square', 0, frequency * .62);
+      this.note(150, .05, .05, 'sine', 0, 92);
+      return;
+    }
+    const fast = speed < 45;
+    this.note(fast ? 1240 : 1150, .022, fast ? .055 : .042, 'square', 0, fast ? 1520 : 900);
+  }
+  // Rising sweep into the cruise phase.
+  accel(duration = .42, from = 180, to = 1180) {
+    const ctx = this.context, at = ctx.currentTime;
+    const oscillator = ctx.createOscillator(), gain = ctx.createGain(), filter = ctx.createBiquadFilter();
+    oscillator.type = 'sawtooth';
+    oscillator.frequency.setValueAtTime(from, at);
+    oscillator.frequency.exponentialRampToValueAtTime(to, at + duration);
+    filter.type = 'lowpass';
+    filter.frequency.setValueAtTime(600, at);
+    filter.frequency.exponentialRampToValueAtTime(3200, at + duration);
+    gain.gain.setValueAtTime(.0001, at);
+    gain.gain.linearRampToValueAtTime(.085, at + duration * .5);
+    gain.gain.exponentialRampToValueAtTime(.0001, at + duration);
+    oscillator.connect(filter).connect(gain).connect(this.output);
+    oscillator.start(at); oscillator.stop(at + duration + .02);
+    this.noise(duration, .05, 1800);
+  }
+  // Continuous cabinet bed while the lamps are moving. One looping noise voice,
+  // its level and centre frequency follow the spin speed.
+  motorStart() {
+    if (this.motor) return;
+    const ctx = this.context;
+    const source = ctx.createBufferSource(), filter = ctx.createBiquadFilter(), gain = ctx.createGain();
+    source.buffer = this.noiseBuffer;
+    source.loop = true;
+    filter.type = 'bandpass';
+    filter.frequency.value = 220;
+    filter.Q.value = 1.1;
+    gain.gain.value = 0;
+    source.connect(filter).connect(gain).connect(this.output);
+    source.start();
+    this.motor = { source, filter, gain };
+  }
+  motorSet(level = 0, frequency = 220) {
+    if (!this.motor) return;
+    const now = this.context.currentTime;
+    this.motor.gain.gain.setTargetAtTime(Math.min(.075, Math.max(0, level)), now, .07);
+    this.motor.filter.frequency.setTargetAtTime(frequency, now, .09);
+  }
+  motorStop(fade = .18) {
+    const motor = this.motor;
+    if (!motor) return;
+    this.motor = null;
+    const now = this.context.currentTime;
+    motor.gain.gain.cancelScheduledValues(now);
+    motor.gain.gain.setValueAtTime(motor.gain.gain.value, now);
+    motor.gain.gain.linearRampToValueAtTime(0, now + fade);
+    try { motor.source.stop(now + fade + .05); } catch { /* already stopped */ }
   }
   button(repeat = false) {
     this.noise(.035, repeat ? .07 : .05, 2400);

@@ -15,6 +15,28 @@ const NATIVE_SAMPLES = Object.freeze({
   jackpotSong: './assets/audio/native/arcade-jackpot-3.mp3'
 });
 
+// Long music beds are pulled in after the first spin starts, a few at a time.
+// Everything the first seconds of play need stays in the eager core set, so the
+// first tap on a phone is never waiting on 5 MB of MP3.
+const MUSIC_KEYS = Object.freeze([
+  'music_highlow_lose_hou_lai', 'music_highlow_lose_lei_hai', 'music_jackpot_bones_01', 'music_jackpot_bones_02',
+  'music_random_chenmo_buyu', 'music_random_huida_wo', 'music_random_qianshi_jinsheng', 'music_random_tage_erxing',
+  'music_random_tiexue_danxin', 'music_random_xibie_hai_an', 'music_random_zhixiang_bugai', 'music_small_win_ai_pin',
+  'music_win_hudie_01', 'bonus_big_four_full_bgm'
+]);
+const CORE_SAMPLES = Object.freeze(Object.fromEntries(
+  Object.entries(LIBRARY_SAMPLES).filter(([key]) => !MUSIC_KEYS.includes(key))
+));
+
+// Every decodable clip, plus the ones that only load when a round actually asks
+// for them. The jackpot-length native master is a fallback layer behind
+// fruit_bar / jackpot_10x_plus, so it does not belong in the first-load set.
+const SAMPLE_URLS = Object.freeze({ ...NATIVE_SAMPLES, ...LIBRARY_SAMPLES });
+const LAZY_SFX_KEYS = Object.freeze(['jackpotSong', 'randomMultiplier']);
+const CORE_SFX_SAMPLES = Object.freeze(Object.fromEntries(
+  Object.entries(NATIVE_SAMPLES).filter(([key]) => !LAZY_SFX_KEYS.includes(key))
+));
+
 export class AudioEngine {
   constructor() {
     try { this.enabled = localStorage.getItem('ouyangfruit.sound') !== 'off'; }
@@ -32,15 +54,17 @@ export class AudioEngine {
       this.mechanicalGain = this.context.createGain();
       this.jackpotGain = this.context.createGain();
       this.compressor = this.context.createDynamicsCompressor();
-      this.compressor.threshold.value = -18;
-      this.compressor.ratio.value = 7;
-      this.compressor.attack.value = .003;
-      this.compressor.release.value = .22;
-      this.masterGain.gain.value = this.enabled ? .48 : 0;
-      this.musicGain.gain.value = .35;
-      this.sfxGain.gain.value = .72;
-      this.mechanicalGain.gain.value = .68;
-      this.jackpotGain.gain.value = .65;
+      // Gentler limiting lets the jackpot stings keep their transient punch
+      // instead of being squashed flat against the music bed.
+      this.compressor.threshold.value = -14;
+      this.compressor.ratio.value = 4;
+      this.compressor.attack.value = .004;
+      this.compressor.release.value = .18;
+      this.masterGain.gain.value = this.enabled ? .58 : 0;
+      this.musicGain.gain.value = .34;
+      this.sfxGain.gain.value = .78;
+      this.mechanicalGain.gain.value = .7;
+      this.jackpotGain.gain.value = .78;
       this.musicGain.connect(this.compressor);
       this.sfxGain.connect(this.compressor);
       this.mechanicalGain.connect(this.compressor);
@@ -53,10 +77,9 @@ export class AudioEngine {
       this.musicSamples = new SampleManager(this.context, this.musicGain);
       this.lastPlayedTrack = '';
       // Decode once and reuse AudioBuffers. Playback never creates HTMLAudioElement nodes.
-      this.sampleReady = Promise.all([
-        this.samples.preload({...NATIVE_SAMPLES, ...LIBRARY_SAMPLES}),
-        this.musicSamples.preload(LIBRARY_SAMPLES)
-      ]);
+      this.sampleReady = this.samples.preload({ ...CORE_SFX_SAMPLES, ...CORE_SAMPLES });
+      // The music bank warms up in the background, never in front of the first spin.
+      this.warmTimer = setTimeout(() => this.warmMusic(), 1200);
     }
     // Both waits are bounded: a slow phone decode can delay the first sound but
     // must never delay a lamp, a bet or a spin.
@@ -66,10 +89,22 @@ export class AudioEngine {
     await Promise.race([this.sampleReady, this.delay(1200)]).catch(() => {});
   }
   delay(ms) { return new Promise(resolve => setTimeout(resolve, ms)); }
+  // Load the long tracks a few at a time so the network never stalls a round.
+  async warmMusic() {
+    if (this.musicWarmed || !this.musicSamples) return;
+    this.musicWarmed = true;
+    for (let index = 0; index < MUSIC_KEYS.length; index += 3) {
+      if (!this.enabled) { this.musicWarmed = false; return; }
+      await Promise.all(MUSIC_KEYS.slice(index, index + 3).map(key => this.musicSamples.load(key, LIBRARY_SAMPLES[key])));
+      await this.delay(160);
+    }
+  }
   setEnabled(enabled) {
     this.enabled = enabled;
     try { localStorage.setItem('ouyangfruit.sound', enabled ? 'on' : 'off'); } catch { /* storage may be restricted */ }
-    if (this.context) this.masterGain.gain.setTargetAtTime(enabled ? .48 : 0, this.context.currentTime, .025);
+    if (this.context) this.masterGain.gain.setTargetAtTime(enabled ? .58 : 0, this.context.currentTime, .025);
+    if (!enabled) this.motor(false);
+    else this.warmMusic();
   }
   // Lights and gameplay never call sounds directly for round structure: the
   // shared event bus does. Swapping an asset is a one-line change here.
@@ -77,12 +112,16 @@ export class AudioEngine {
     if (!bus || this.bound) return false;
     this.bound = true;
     this.bus = bus;
-    bus.on(E.SPIN_START, () => this.startKick());
+    bus.on(E.SPIN_START, () => { this.startKick(); this.motor(true, 150); });
+    bus.on(E.SPIN_ACCELERATE, () => { this.routed('mechanical', 'accel'); this.motor(true, 96); });
     bus.on(E.SPIN_TICK, payload => {
       if (payload.phase === 'TRAIN') this.trainStep(payload.step ?? 0, payload.speed);
-      else this.tick(payload.phase, payload.speed, payload.remaining ?? Infinity);
+      else {
+        this.tick(payload.phase, payload.speed, payload.remaining ?? Infinity);
+        this.motor(true, payload.speed);
+      }
     });
-    bus.on(E.SPIN_STOP, () => this.stop());
+    bus.on(E.SPIN_STOP, () => { this.motor(false); this.stop(); });
     bus.on(E.MULTIPLIER_ARM, () => this.multiplierArm());
     bus.on(E.MULTIPLIER_START, () => this.multiplierRoll(true));
     bus.on(E.MULTIPLIER_TICK, payload => {
@@ -108,9 +147,40 @@ export class AudioEngine {
   sound(method, ...args) { if (this.enabled && this.synth) this.synth[method](...args); }
   routed(bus, method, ...args) { if (this.enabled && this[bus]) this[bus][method](...args); }
   button(repeat = false) { this.routed('mechanical', 'button', repeat); }
-  sample(key, options) { return Boolean(this.enabled && this.samples?.play(key, options)); }
+  // A clip that is not decoded yet is fetched in the background and skipped for
+  // this frame: the synthetic fallback always keeps the cabinet audible.
+  sample(key, options) {
+    if (!this.enabled || !this.samples) return false;
+    if (!this.samples.cache.has(key)) {
+      const url = SAMPLE_URLS[key];
+      if (url) this.samples.load(key, url);
+      return false;
+    }
+    return Boolean(this.samples.play(key, options));
+  }
+  // Cabinet bed while the lamps are moving. Level and colour track the spin
+  // speed, so the sound accelerates and winds down with the light.
+  motor(on, speed = 150) {
+    if (!this.mechanical) return;
+    if (!on || !this.enabled) { this.mechanical.motorStop(); this.lastMotorSpeed = 0; return; }
+    const now = Date.now();
+    if (this.lastMotorSpeed && Math.abs(this.lastMotorSpeed - speed) < 6 && now - (this.lastMotorAt ?? 0) < 140) return;
+    this.lastMotorSpeed = speed; this.lastMotorAt = now;
+    const t = Math.min(1, Math.max(0, (140 - speed) / 110));
+    this.mechanical.motorStart();
+    this.mechanical.motorSet(.018 + t * .042, 170 + t * 270);
+  }
+  // Music beds are loaded on demand; a track that is not decoded yet simply
+  // yields to the SFX and plays on the next round instead of blocking.
+  ensureMusic(key) {
+    if (!this.musicSamples || !LIBRARY_SAMPLES[key]) return false;
+    if (this.musicSamples.cache.has(key)) return true;
+    this.musicSamples.load(key, LIBRARY_SAMPLES[key]);
+    return false;
+  }
   music(key, volume = .5) {
     if (!this.enabled || !key) return false;
+    if (!this.ensureMusic(key)) return false;
     this.musicSamples?.stop('music');
     this.lastPlayedTrack = key;
     return Boolean(this.musicSamples?.play(key, { volume, group: 'music', replace: true }));

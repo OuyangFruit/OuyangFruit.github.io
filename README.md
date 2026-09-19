@@ -38,10 +38,34 @@ round:start → spin:start → spin:accelerate → spin:cruise → spin:decelera
 - `js/game-events.js`：事件总线（`GameEventBus`）。
 - `js/audio/`：单个 AudioContext、程序化音效、压缩器与 AudioBuffer 样本层。`assets/audio/native/` 内的原机录像音轨用于启动、水果奖、大奖和特殊事件；样本未就绪时自动回退到合成音，不会阻塞游戏。
 
+- `reference/`：用户提供的原机参考照片；机台外框、中央功能盘与下注窗继续沿用原机照片。
+
+## 音效系统
+
+单例 `AudioContext` + 五条总线（master / music / sfx / mechanical / jackpot）经压缩器汇流。
+
+- **分级预载**：核心音（原机启动、八个水果、启动 / 移分 / 倍率揭晓 / 大奖 sting，约 1.5 MB）在首次点击时解码；14 首长音乐（约 4.3 MB）在第一局开始后**后台分批**预热（每批 3 首），永不阻塞第一局，也不阻塞下注。
+- **跑灯音随速度变化**：每个灯位事件 `spin:tick` 都带当前格速，音高与音量随之改变——加速段清脆变密、巡航段形成连续紧张节奏、减速段音高下沉且间隔拉长、最后 3–5 格进入 suspense。
+- **机台底噪**：`SynthEffects.motorStart / motorSet / motorStop` 用一条循环噪声 + 带通滤波提供持续马达声，中心频率与增益跟随格速，停灯瞬间淡出。
+- **加速扫频**：`spin:accelerate` 触发一次锯齿 + 噪声扫频，配合灯光起步。
+- **兜底合成音**：任何样本未就绪都会回落到 Web Audio 合成音，游戏不会因为素材未加载而哑掉。
+- 压缩器阈值 −14 dB、比率 4:1，保留大奖 sting 的瞬态冲击，而不是把所有声音压成同一电平。
+
+## 图案资产
+
+默认使用**矢量重绘**（`assets/images/symbols-vector/*.svg`，100×100 viewBox，任意尺寸锐利）：
+
+`apple` `orange` `grape`(紫李) `watermelon` `bell` `star` `seven`(蓝九) `bar` `lose`
+
+统一规范：方形画布、深棕描边 `#2b1206`、平涂高饱和主色 + 左上高光、无外部阴影、无文字（BAR 除外）。
+
+原始照片裁切保留在 `assets/images/symbols/*.png`（150–190 px，来自 709×1536 原机照片，含印刷文字与相邻格边缘）。
+访问 `?art=photo` 可切回照片版；`css/art.css` 负责矢量模式的 `background-size: contain` 与滤镜。
+
 ## 测试
 
 - `node tests/smoke.mjs`：24 局流程、倍率与派奖一致性、揭晓时序、事件顺序、灯效计划覆盖、pity 间隔与稀有度、监听器不泄漏。
-- 浏览器验收（Playwright，含 iPhone 尺寸截图）：正式页面无 Debug 控件、20 连局无 DOM 增长、六种特殊节目、Jackpot 全盘爆闪、移动端无横向溢出。
+- 浏览器验收（Playwright，51 项，含 iPhone 尺寸截图）：正式页面无 Debug 控件、20 连局无 DOM 增长、六种特殊节目、Jackpot 全盘爆闪、移动端无横向溢出、音频分级预载行为。
 
 ## 性能约定
 
@@ -49,6 +73,5 @@ round:start → spin:start → spin:accelerate → spin:cruise → spin:decelera
 - 火花粒子为固定 28 个节点的复用池，只改 CSS 变量。
 - 动画只用 `transform` / `opacity`；跑灯、揭晓与灯光序列共用同一条按 scale 缩放的 `EventTimeline` 时钟，不额外创建常驻计时器。
 - `AudioContext.unlock()` 有上限等待，解码永远不阻塞下注与跑灯。
-- `reference/`、`assets/images/`：用户提供的原机参考及裁取素材，机台画面继续沿用。
 
 本地测试需使用 HTTP 静态服务器；`file://` 可能阻止 ES Modules 加载。

@@ -1,0 +1,26 @@
+/* Vector symbol layer. The photo crops stretch to fill each printed tile; the
+   redrawn vector set keeps its own aspect ratio so the fruit never distorts. */
+.machine[data-art="vector"] .tile-art {
+  background-size: contain;
+  background-position: center;
+  filter: saturate(1.05) contrast(1.03);
+}
+.machine[data-art="vector"] .tile.lit .tile-art { filter: brightness(1.22) saturate(1.35) contrast(1.05); }
+.machine[data-art="vector"] .tile.trail-1 .tile-art { filter: brightness(1.1) saturate(1.2); }
+.machine[data-art="vector"] .tile.trail-2 .tile-art { filter: brightness(1.03) saturate(1.08); }
+
+.machine[data-art="vector"] .button-symbol {
+  width: 82%;
+  height: 82%;
+  filter: drop-shadow(1px 2px 1px #5b0c28) saturate(1.06);
+}
+.machine[data-art="vector"] .bet-key.active .button-symbol,
+.machine[data-art="vector"] .bet-key.special-complete .button-symbol {
+  filter: brightness(1.16) drop-shadow(0 0 3px #ffe9a0);
+}
+.machine[data-art="vector"] .bet-key.winner .button-symbol { filter: brightness(1.5) drop-shadow(0 0 5px #fff); }
+
+@media (max-width: 600px) {
+  .machine[data-art="vector"] .tile-art { left: 3px; right: 3px; top: 2px; bottom: 10px; }
+  .machine[data-art="vector"] .button-symbol { width: 86%; height: 86%; }
+}

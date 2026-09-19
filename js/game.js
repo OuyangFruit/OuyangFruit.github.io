@@ -23,6 +23,11 @@ winEl.parentElement.classList.add('win-box');
 creditEl.parentElement.classList.add('credit-box');
 const debugMode = new URLSearchParams(location.search).get('debug') === '1';
 const scale = debugMode && new URLSearchParams(location.search).get('test') === '1' ? .02 : 1;
+// Vector symbols are the default: they stay crisp at any size on a retina phone.
+// The original photo crops remain available with ?art=photo.
+const artStyle = new URLSearchParams(location.search).get('art') === 'photo' ? 'photo' : 'vector';
+const symbolUrl = name => `url('../assets/images/symbols${artStyle === 'photo' ? '' : '-vector'}/${name.toLowerCase()}.${artStyle === 'photo' ? 'png' : 'svg'}')`;
+machine.dataset.art = artStyle;
 const audio = new AudioEngine();
 const bus = new GameEventBus();
 audio.bind(bus);
@@ -43,7 +48,7 @@ const cells = BOARD_CELLS.map(cell => {
   tile.className = 'tile';
   tile.style.gridColumn = coordinates[cell.index][0];
   tile.style.gridRow = coordinates[cell.index][1];
-  tile.style.setProperty('--symbol-url', `url('../assets/images/symbols/${cell.symbol.toLowerCase()}.png')`);
+  tile.style.setProperty('--symbol-url', symbolUrl(cell.symbol));
   tile.style.setProperty('--tile-index', String(cell.index));
   tile.innerHTML = `<span class="tile-art" aria-hidden="true"></span><span class="tile-print">${PRINT_LABELS[cell.index]}</span>`;
   tile.setAttribute('aria-label', `${cell.index + 1} ${PRIZES[cell.symbol].label}`);
@@ -73,7 +78,7 @@ for (const channel of BET_CHANNELS) {
   const button = document.createElement('button');
   button.className = 'bet-key'; button.type = 'button'; button.dataset.channel = channel.key;
   button.setAttribute('aria-label', `${channel.label} 下注 1 分`);
-  button.style.setProperty('--button-symbol', `url('../assets/images/symbols/${channel.key.toLowerCase()}.png')`);
+  button.style.setProperty('--button-symbol', symbolUrl(channel.key));
   button.innerHTML = `<span class="button-cap" aria-hidden="true"><span class="button-symbol"></span></span><span class="bet-key-label">${channel.label}</span>`;
   betKeys.append(button); buttons.set(channel.key, button);
 }
@@ -156,6 +161,9 @@ document.querySelectorAll('[data-highlow]').forEach(button => button.addEventLis
 setupDebug(engine);
 if (debugMode) window.__fruitDebug = { engine, bus, lighting, multiplier, funMode, effects };
 document.addEventListener('visibilitychange', () => {
-  if (document.hidden && audio.context?.state === 'running') audio.context.suspend();
+  if (document.hidden) {
+    audio.motor(false);
+    if (audio.context?.state === 'running') audio.context.suspend();
+  }
   else if (!document.hidden && audio.context?.state === 'suspended') audio.context.resume().catch(() => {});
 });
